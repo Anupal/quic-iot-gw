@@ -70,23 +70,27 @@ async def coap_packet_handler(data):
 
 
 async def run_client_proxy(quic_server_host: str, quic_server_port: int, coap_proxy_host: str, coap_proxy_port: int,
-              disable_cert_verification: bool = False):
-    quic_client = await coap.transport.get_quic_client(quic_server_host, quic_server_port, disable_cert_verification)
-    # Set up CoAP server with QUIC integration
-    root = resource.Site()
-    coap_proxy_resource = CoAPProxyResource(quic_client)
-    root.add_resource(['proxy'], coap_proxy_resource)
+                           disable_cert_verification: bool = False):
+    async with coap.transport.get_quic_client(quic_server_host, quic_server_port,
+                                              disable_cert_verification) as quic_client:
+        logger.info(f"QUIC transport client connected, {quic_client}")
 
-    logger.info(f"Starting CoAP Proxy Server ({coap_proxy_host}:{coap_proxy_port})")
-    await aiocoap.Context.create_server_context(root, bind=(coap_proxy_host, coap_proxy_port))
+        # Set up CoAP server with QUIC integration
+        root = resource.Site()
+        coap_proxy_resource = CoAPProxyResource(quic_client)
+        root.add_resource(['proxy'], coap_proxy_resource)
 
-    # Serve until process is killed
-    await asyncio.get_running_loop().create_future()
+        logger.info(f"Starting CoAP Proxy Server ({coap_proxy_host}:{coap_proxy_port})")
+        await aiocoap.Context.create_server_context(root, bind=(coap_proxy_host, coap_proxy_port))
+
+        # Serve until process is killed
+        await asyncio.get_running_loop().create_future()
 
 
 async def run_server_proxy(quic_server_host, quic_server_port, certfile, keyfile):
-    quic_server = coap.transport.get_quic_server(quic_server_host, quic_server_port, certfile, keyfile, coap_packet_handler)
     logger.info(f"Starting QUIC server ({quic_server_host}:{quic_server_port})")
+    quic_server = await coap.transport.get_quic_server(quic_server_host, quic_server_port, certfile, keyfile)
+    quic_server._create_protocol.packet_handler = coap_packet_handler
 
     # Serve until process is killed
     await asyncio.get_running_loop().create_future()
