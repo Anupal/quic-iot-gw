@@ -36,10 +36,11 @@ class ProxyClientProtocol(QuicConnectionProtocol):
 
 
 class ProxyServerProtocol(QuicConnectionProtocol):
-    def __init__(self, *args, packet_handler=None, **kwargs):
+    packet_handler = None
+
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._stream_id = None
-        self.packet_handler = packet_handler
 
     def quic_event_received(self, event):
         if isinstance(event, HandshakeCompleted):
@@ -51,34 +52,25 @@ class ProxyServerProtocol(QuicConnectionProtocol):
     async def handle_quic_request(self, data, stream_id):
         logger.info(f"Received data over QUIC: {data}")
 
-        response = await self.packet_handler(data)
+        response = await ProxyServerProtocol.packet_handler(data)
 
         # Send the CoAP response back over QUIC
         self._quic.send_stream_data(stream_id, response.encode())
         self.transmit()
 
 
-class ProxyServerProtocolFactory:
-    def __init__(self, packet_handler):
-        self.packet_handler = packet_handler
-
-    def create(self,  *args, **kwargs):
-        return ProxyServerProtocol( *args, self.packet_handler, **kwargs)
-
-
-async def get_quic_client(quic_server_host, quic_server_port, disable_cert_verification=True):
+def get_quic_client(quic_server_host, quic_server_port, disable_cert_verification=True):
     logger.info(f"Starting QUIC transport client, remote server = ({quic_server_host}:{quic_server_port})")
     configuration = QuicConfiguration(is_client=True)
     configuration.verify_mode = not disable_cert_verification  # Disable certificate verification for testing
 
-    return connect(quic_server_host, quic_server_port, configuration=configuration, create_protocol=ProxyClientProtocol)
+    return connect(quic_server_host, quic_server_port, configuration=configuration,
+                       create_protocol=ProxyClientProtocol)
 
 
-async def get_quic_server(quic_server_host, quic_server_port, certfile, keyfile, packet_handler):
+async def get_quic_server(quic_server_host, quic_server_port, certfile, keyfile):
     logger.info(f"Starting QUIC transport server ({quic_server_host}:{quic_server_port})")
     configuration = QuicConfiguration(is_client=False)
     configuration.load_cert_chain(certfile=certfile, keyfile=keyfile)
 
-    factory = ProxyServerProtocolFactory(packet_handler)
-
-    return serve(quic_server_host, quic_server_port, configuration=configuration, create_protocol=factory.create)
+    return await serve(quic_server_host, quic_server_port, configuration=configuration, create_protocol=ProxyServerProtocol)
