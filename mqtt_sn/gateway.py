@@ -113,7 +113,18 @@ class Gateway:
                         asyncio.create_task(self.register_handler(decoded_message, self.mqtt_sn_clients[remote_addr]["client_id"], remote_addr))
                     )
                 else:
-                    logger.error(f"Unknown client '{remote_addr}'")
+                    logger.error(f"REGISTER received from unknown client '{remote_addr}'")
+                    logger.info(f"Sending DISCONNECT message to {remote_addr}")
+                    await self.dgram_write_queue.put((self.encoder.encode(
+                        type=MessageType.DISCONNECT
+                    ), remote_addr))
+            elif decoded_message["type"] == MessageType.PUBLISH:
+                if remote_addr in self.mqtt_sn_clients:
+                    self.mqtt_tasks.add(
+                        asyncio.create_task(self.publish_handler(decoded_message, self.mqtt_sn_clients[remote_addr]["client_id"], remote_addr))
+                    )
+                else:
+                    logger.error(f"PUBLISH received from unknown client '{remote_addr}'")
                     logger.info(f"Sending DISCONNECT message to {remote_addr}")
                     await self.dgram_write_queue.put((self.encoder.encode(
                         type=MessageType.DISCONNECT
@@ -143,6 +154,31 @@ class Gateway:
         )
         logger.info(f"Sending REGACK message: {regack_message} to {remote_addr}")
         await self.dgram_write_queue.put((regack_message, remote_addr))
+
+    async def publish_handler(self, message, client_id, remote_addr):
+        topic_id = message["topic_id"]
+        topic_name = self.registered_topics.topic_id_to_name(client_id, topic_id)
+        if topic_name:
+            # todo: implement MQTT relay
+            logger.info("Forwarded message to MQTT broker (details)")
+            puback_message = self.encoder.encode(
+                type=MessageType.PUBACK,
+                topic_id=topic_id,
+                msg_id=message["msg_id"],
+                return_code=ReturnCode.ACCEPTED
+            )
+            logger.info(f"Sending PUBACK message: {puback_message} to {remote_addr}")
+            await self.dgram_write_queue.put((puback_message, remote_addr))
+        else:
+            logger.error(f"No associated topic id '{topic_id}' found for MQTT-SN client '{client_id}'")
+            puback_message = self.encoder.encode(
+                type=MessageType.PUBACK,
+                topic_id=topic_id,
+                msg_id=message["msg_id"],
+                return_code=ReturnCode.INVALID_TOPIC
+            )
+            logger.info(f"Sending PUBACK message: {puback_message} to {remote_addr}")
+            await self.dgram_write_queue.put((puback_message, remote_addr))
 
     async def stop(self):
         self.reader_task.cancel()
