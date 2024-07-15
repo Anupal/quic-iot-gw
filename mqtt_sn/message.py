@@ -207,6 +207,13 @@ class MQTTSNPacketEncoder:
         payload += struct.pack("!HB", msg_id, return_code)
         return struct.pack("!B", length) + payload
 
+    def _encode_disconnect(self):
+        length = 2
+        message_type = MessageType.DISCONNECT
+        payload = struct.pack("!B", message_type)
+        return struct.pack("!B", length) + payload
+
+
 
 if __name__ == '__main__':
     decoder = MQTTSNPacketDecoder()
