@@ -12,6 +12,7 @@ class Gateway:
         self.host, self.port = host, port
         self.dgram_read_queue = asyncio.Queue()
         self.dgram_write_queue = asyncio.Queue()
+        self.mqtt_tasks = set()
         self.decoder = MQTTSNPacketDecoder()
         self.encoder = MQTTSNPacketEncoder()
 
@@ -20,9 +21,24 @@ class Gateway:
         udp_stream = await asyncio_dgram.bind((self.host, self.port))
         self.reader_task = asyncio.create_task(self.datagram_reader(udp_stream))
         self.writer_task = asyncio.create_task(self.datagram_writer(udp_stream))
-        self.message_handler_task = asyncio.create_task(self.message_handler())
+        self.message_handler_task = asyncio.create_task(self.message_dispatcher())
 
-        await asyncio.gather(self.reader_task, self.message_handler_task, self.writer_task)
+        # Execute MQTT relay tasks
+        while True:
+            if self.mqtt_tasks:
+                finished_tasks, _ = await asyncio.wait(
+                    self.mqtt_tasks, timeout=0.5
+                )
+
+                for task in finished_tasks:
+                    try:
+                        task.result()
+                    except Exception as e:
+                        logger.exception(f"Exception while executing MQTT task {e}")
+
+                self.mqtt_tasks.difference_update(finished_tasks)
+            else:
+                await asyncio.sleep(0.5)
 
     async def datagram_reader(self, udp_stream: asyncio_dgram.aio.DatagramStream):
         logger.info("Datagram reader started")
