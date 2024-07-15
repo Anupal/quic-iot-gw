@@ -57,10 +57,7 @@ class MQTTSNPacketDecoder:
 
         length = message[0]
         message_type = message[1]
-
-        if length == 0x01:
-            length = struct.unpack("!H", message[1:3])[0]
-            message_type = message[3]
+        message = message[2:]
 
         if message_type == MessageType.CONNECT:
             return self._decode_connect(message)
@@ -209,6 +206,13 @@ class MQTTSNPacketEncoder:
         payload = struct.pack("!BH", message_type, topic_id)
         payload += struct.pack("!HB", msg_id, return_code)
         return struct.pack("!B", length) + payload
+
+    def _encode_disconnect(self):
+        length = 2
+        message_type = MessageType.DISCONNECT
+        payload = struct.pack("!B", message_type)
+        return struct.pack("!B", length) + payload
+
 
 
 if __name__ == '__main__':
