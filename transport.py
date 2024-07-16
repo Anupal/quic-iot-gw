@@ -50,10 +50,12 @@ class QUICGatewayClient:
         self.quic_server_host, self.quic_server_port = quic_server_host, quic_server_port
         self.disable_cert_verification = disable_cert_verification
         self.quic_client = None
-        self.stream_to_device = {}
-        self.device_to_stream = {}
 
     async def run(self):
+        """
+        Can be overridden by subclasses to implement the main loop. But should call self.init_quic_client()
+        :return:
+        """
         tx_task = asyncio.create_task(self.tx_message_dispatcher())
         rx_task = asyncio.create_task(self.rx_message_dispatcher())
 
@@ -163,9 +165,13 @@ class QUICGatewayServerProtocol(QuicConnectionProtocol):
         """
         logger.info("RX Dispatcher started")
         while True:
-            stream_id, data = await self.get_data()
-            logger.info(f"RX Dispatcher - {stream_id}: {data.decode()}")
-            await self.send_data(stream_id, f"{data.decode()} BACK".encode())
+            try:
+                stream_id, data = await self.get_data()
+                logger.info(f"RX Dispatcher - {stream_id}: {data.decode()}")
+                await self.send_data(stream_id, f"{data.decode()} BACK".encode())
+            except Exception as e:
+                logger.error("RX Dispatcher - error in received data...")
+                logger.exception(e)
 
 
 async def init_quic_server(quic_server_host, quic_server_port, certfile, keyfile, disable_cert_verification,
