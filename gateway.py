@@ -93,6 +93,9 @@ class CoAPClientContext(ClientContext):
             client_address = self._pending_requests.pop((coap_data.token, coap_data.mid))
             await self.write_queue.put((data, client_address))
 
+# todo: add is_valid packet and use it for figuring out packet type in rx/tx handler
+# todo: figure out bidirectional flow
+
 
 class IoTGatewayClient(transport.QUICGatewayClient):
     def __init__(self, *args, coap_context, **kwargs):
@@ -140,3 +143,77 @@ class IoTGatewayClient(transport.QUICGatewayClient):
             else:
                 logger.error("RX Dispatcher - no quic client available, retrying after 5 seconds.")
                 await asyncio.sleep(5)
+
+
+class ServerContext:
+    async def handle_read_message(self, data):
+        """
+        Read data from read queue and save request information like MID, client address.
+        """
+
+    async def handle_write_message(self, data):
+        """
+        Write to write queue and send it to application protocol io.
+        """
+
+    def is_valid(self, data):
+        ...
+
+
+class CoAPServerContext(ServerContext):
+    async def handle_read_message(self, data):
+        coap_request = aiocoap.Message.decode(data)
+        if coap_request.opt.proxy_uri is None:
+            logger.warning("Proxy-URI option missing in request")
+            response = aiocoap.Message(code=aiocoap.BAD_OPTION)
+        else:
+            target_uri = coap_request.opt.proxy_uri
+            logger.info(f"Proxying request to {target_uri}")
+
+            # Forward the CoAP request to the actual server
+            protocol = await aiocoap.Context.create_client_context()
+            proxy_request = aiocoap.Message(code=coap_request.code, uri=target_uri, payload=coap_request.payload)
+
+            try:
+                coap_response = await protocol.request(proxy_request).response
+                logger.info(f"Forwarded request to {target_uri}, received response: {coap_response} payload: "
+                            f"'{coap_response.payload}'")
+                response = coap_response
+            except Exception as e:
+                logger.error(f"Failed to get response from server: {e}")
+                response = aiocoap.Message(code=aiocoap.INTERNAL_SERVER_ERROR)
+
+        response.mid = coap_request.mid
+        response.token = coap_request.token
+        return response.encode()
+
+    async def handle_write_message(self, data):
+        ...
+
+    def is_valid(self, data):
+        try:
+            message = aiocoap.Message.decode(data)
+            # check code type is Unknown if parsing passes
+            return "Unknown" not in message.code.name_printable
+        except:
+            return False
+
+
+class IoTGatewayServerProtocol(transport.QUICGatewayServerProtocol):
+    async def tx_message_dispatcher(self):
+        logger.info("TX Dispatcher started")
+
+    async def rx_message_dispatcher(self):
+        coap_server_context = CoAPServerContext()
+        logger.info("RX Dispatcher started")
+        while True:
+            try:
+                stream_id, data = await self.get_data()
+                logger.info(f"RX Dispatcher - {stream_id}: {data}")
+
+                if coap_server_context.is_valid(data):
+                    response = await coap_server_context.handle_read_message(data)
+                    await self.send_data(stream_id, response)
+            except Exception as e:
+                logger.error("RX Dispatcher - error in received data...")
+                logger.exception(e)
