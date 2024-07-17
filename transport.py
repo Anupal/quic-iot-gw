@@ -4,12 +4,13 @@ Base QUIC Server and Client class to handle rx-tx queues.
 
 import logging
 from typing import Tuple
+import random
 
 import asyncio
 from aioquic.asyncio import serve, connect
 from aioquic.asyncio.protocol import QuicConnectionProtocol
 from aioquic.quic.configuration import QuicConfiguration
-from aioquic.quic.events import HandshakeCompleted, StreamDataReceived
+from aioquic.quic.events import HandshakeCompleted, StreamDataReceived, ConnectionTerminated, PingAcknowledged
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ class QUICGatewayClient:
             super().__init__(*args, **kwargs)
             self.quic_client_write_queue: asyncio.Queue[Tuple[int, bytes]] = asyncio.Queue()
             self.quic_client_read_queue: asyncio.Queue[Tuple[int, bytes]] = asyncio.Queue()
+            self._keep_alive_set = set()
 
         def quic_event_received(self, event):
             if isinstance(event, HandshakeCompleted):
@@ -33,6 +35,13 @@ class QUICGatewayClient:
                 logger.info(f"Received from server-proxy, payload: '{event.data}' on stream '{event.stream_id}'")
                 asyncio.ensure_future(self.quic_client_read_queue.put((event.stream_id, event.data)))
 
+            elif isinstance(event, ConnectionTerminated):
+                logger.info("QUIC connection terminated.")
+
+            elif isinstance(event, PingAcknowledged):
+                if event.uid in self._keep_alive_set:
+                    self._keep_alive_set.remove(event.uid)
+
         async def send_data(self, stream_id, payload: bytes):
             await self.quic_client_write_queue.put((stream_id, payload))
 
@@ -41,10 +50,22 @@ class QUICGatewayClient:
             return response
 
         async def _keep_alive(self):
-            logger.info("Started Keep-Alive task (will send every 10 seconds)")
+            logger.info("Started Keep-Alive task (will send every 1 seconds)")
             while True:
-                await asyncio.sleep(10)  # Send ping every 10 seconds
-                await self.ping()
+                if len(self._keep_alive_set) > 3:
+                    logger.error("More than 3 pings not acknowledged. Closing connection.")
+                    self.close()
+                    return
+                await asyncio.sleep(1)  # Send ping every 1 seconds
+                try:
+                    uid = id(random.random())
+                    self._quic.send_ping(uid)
+                    self._keep_alive_set.add(uid)
+                    self.transmit()
+                except Exception as e:
+                    logger.error("Keep alives to server-proxy failed! Closing connection.")
+                    logger.exception(e)
+                    self.close()
 
         async def quic_writer(self):
             while True:
@@ -80,14 +101,21 @@ class QUICGatewayClient:
         configuration.verify_mode = not self.disable_cert_verification  # Disable certificate verification for testing
 
         while True:
-            async with connect(self.quic_server_host, self.quic_server_port, configuration=configuration,
-                               create_protocol=self._QUICGatewayClientProtocol) as quic_client:
-                self.quic_client = quic_client
-                await quic_client.wait_closed()
+            try:
+                async with connect(self.quic_server_host, self.quic_server_port, configuration=configuration,
+                                   create_protocol=self._QUICGatewayClientProtocol) as quic_client:
+                    self.quic_client = quic_client
+                    await quic_client.wait_closed()
 
-                # restart if quic_client gets disconnected
-                logger.info("QUIC client disconnected, retrying")
-                await asyncio.sleep(1)
+                    # restart if quic_client gets disconnected
+                    logger.info("QUIC client disconnected, retrying after 1 second")
+                    self.quic_client = None
+                    await asyncio.sleep(1)
+            except Exception as e:
+                logger.error("Unable to connect to QUIC server, retrying after 5 seconds.")
+                logger.exception(e)
+                self.quic_client = None
+                await asyncio.sleep(5)
 
     async def tx_message_dispatcher(self):
         """
