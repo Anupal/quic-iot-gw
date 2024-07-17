@@ -78,22 +78,22 @@ class QUICGatewayClient:
         self.quic_server_host, self.quic_server_port = quic_server_host, quic_server_port
         self.disable_cert_verification = disable_cert_verification
         self.quic_client = None
+        self.io_tasks = []
+        self.io_tasks_funcs = []
 
     async def run(self):
         """
-        Can be overridden by subclasses to implement the main loop. But should call self.init_quic_client()
-        :return:
+        Can be overridden by subclasses to implement the main loop. But should add dispatcher funcs
+        and call self.init_quic_client()
         """
-        tx_task = asyncio.create_task(self.tx_message_dispatcher())
-        rx_task = asyncio.create_task(self.rx_message_dispatcher())
+        self.io_tasks = []
+        self.io_tasks_funcs = [self.tx_message_dispatcher, self.rx_message_dispatcher]
 
         await self.init_quic_client()
-        await asyncio.gather(tx_task, rx_task)
 
     async def init_quic_client(self):
         """
         Creates a QUIC client and runs infinite loop to send data based on write queue.
-        :return:
         """
         logger.info(
             f"Starting QUIC transport client, remote server = ({self.quic_server_host}:{self.quic_server_port})")
