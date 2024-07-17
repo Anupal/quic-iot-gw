@@ -1,4 +1,5 @@
 import logging
+from typing import Tuple
 
 import aiocoap
 import asyncio
@@ -33,12 +34,12 @@ class ClientContext:
         Setup writer task to run in background. This will read data in write_queue and send it to application protocol io.
         """
 
-    async def handle_read_message(self):
+    async def handle_read_message(self, get_next_stream_id) -> Tuple[bytes, int]:
         """
         Read data from read queue and save request information like MID, client address.
         """
 
-    async def handle_write_message(self, data):
+    async def handle_write_message(self, data, stream_id):
         """
         Write to write queue and send it to application protocol io.
         """
@@ -46,12 +47,17 @@ class ClientContext:
     def is_valid(self, data) -> bool:
         ...
 
+    def reset(self):
+        ...
+
 
 class CoAPClientContext(ClientContext):
     def __init__(self, host, port):
         super().__init__()
         self.host, self.port = host, port
-        self._pending_requests = {}
+        # self._pending_requests = {}
+        self._device_stream_map = {}
+        self._stream_device_map = {}
 
     async def run(self):
         logger.info(f"Starting CoAP Proxy server on {self.host}:{self.port}")
@@ -80,19 +86,28 @@ class CoAPClientContext(ClientContext):
             )
             await udp_stream.send(data, client_addr)
 
-    async def handle_read_message(self):
+    async def handle_read_message(self, get_next_stream_id: callable):
         data, client_address = await self.read_queue.get()
+        if client_address in self._device_stream_map:
+            stream_id = self._device_stream_map[client_address]
+        else:
+            stream_id = get_next_stream_id()
+            self._device_stream_map[client_address] = stream_id
+            self._stream_device_map[stream_id] = client_address
+
         logger.info(f"Handling CoAP request from {client_address}")
         coap_data = aiocoap.Message.decode(data)
-        self._pending_requests[(coap_data.token, coap_data.mid)] = client_address
-        return data
+        # self._pending_requests[(coap_data.token, coap_data.mid)] = client_address
+        return data, stream_id
 
-    async def handle_write_message(self, data):
+    async def handle_write_message(self, data, stream_id):
         logger.info(f"Handling CoAP response")
         coap_data = aiocoap.Message.decode(data)
         logger.info(f"Decoded CoAP response = {coap_data}")
-        if (coap_data.token, coap_data.mid) in self._pending_requests:
-            client_address = self._pending_requests.pop((coap_data.token, coap_data.mid))
+        if stream_id in self._stream_device_map:
+        # if (coap_data.token, coap_data.mid) in self._pending_requests:
+            # client_address = self._pending_requests.pop((coap_data.token, coap_data.mid))
+            client_address = self._stream_device_map[stream_id]
             await self.write_queue.put((data, client_address))
 
     def is_valid(self, data):
@@ -102,6 +117,11 @@ class CoAPClientContext(ClientContext):
             return "Unknown" not in message.code.name_printable
         except:
             return False
+
+    def reset(self):
+        logger.info("Resetting CoAP context - cleared pending requests, stream ids")
+        # self._pending_requests = {}
+        self._device_stream_map = {}
 
 
 class ServerContext:

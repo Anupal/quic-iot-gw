@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 # todo: figure out bidirectional flow
-# todo: stream id mapping in protocol context
 
 
 class IoTGatewayClient(transport.QUICGatewayClient):
@@ -30,11 +29,13 @@ class IoTGatewayClient(transport.QUICGatewayClient):
 
     async def coap_tx_message_dispatcher(self):
         logger.info("CoAP TX Dispatcher started")
+        self.coap_context.reset()
         while True:
             if self.quic_client:
                 try:
-                    payload = await self.coap_context.handle_read_message()
-                    stream_id = self.quic_client._quic.get_next_available_stream_id()
+                    payload, stream_id = await self.coap_context.handle_read_message(
+                        self.quic_client._quic.get_next_available_stream_id
+                    )
 
                     logger.info(f"TX Dispatcher - {stream_id}: {payload}")
                     await self.quic_client.send_data(stream_id, payload)
@@ -54,7 +55,7 @@ class IoTGatewayClient(transport.QUICGatewayClient):
                     stream_id, data = await self.quic_client.get_data()
                     logger.info(f"RX Dispatcher - {stream_id}: {data}")
                     if self.coap_context.is_valid(data):
-                        await self.coap_context.handle_write_message(data)
+                        await self.coap_context.handle_write_message(data, stream_id)
                 except Exception as e:
                     logger.error("RX Dispatcher - Error occurred when handling CoAP message...")
                     logger.exception(e)
