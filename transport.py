@@ -105,17 +105,29 @@ class QUICGatewayClient:
                 async with connect(self.quic_server_host, self.quic_server_port, configuration=configuration,
                                    create_protocol=self._QUICGatewayClientProtocol) as quic_client:
                     self.quic_client = quic_client
+                    asyncio.ensure_future(self.start_io_tasks())
                     await quic_client.wait_closed()
 
                     # restart if quic_client gets disconnected
                     logger.info("QUIC client disconnected, retrying after 1 second")
+                    self.cancel_io_tasks()
                     self.quic_client = None
                     await asyncio.sleep(1)
             except Exception as e:
                 logger.error("Unable to connect to QUIC server, retrying after 5 seconds.")
                 logger.exception(e)
-                self.quic_client = None
                 await asyncio.sleep(5)
+
+    async def start_io_tasks(self):
+        io_tasks = []
+        for func in self.io_tasks_funcs:
+            io_tasks.append(asyncio.create_task(func()))
+        self.io_tasks = io_tasks
+        await asyncio.gather(*io_tasks)
+
+    def cancel_io_tasks(self):
+        for task in self.io_tasks:
+            task.cancel()
 
     async def tx_message_dispatcher(self):
         """

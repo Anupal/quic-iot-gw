@@ -116,11 +116,10 @@ class IoTGatewayClient(transport.QUICGatewayClient):
         asyncio.ensure_future(coap_context.run())
 
     async def run(self):
-        coap_tx_task = asyncio.create_task(self.coap_tx_message_dispatcher())
-        coap_rx_task = asyncio.create_task(self.rx_message_dispatcher())
+        self.io_tasks = []
+        self.io_tasks_funcs = [self.coap_tx_message_dispatcher, self.rx_message_dispatcher]
 
         await self.init_quic_client()
-        await asyncio.gather(coap_tx_task, coap_rx_task)
 
     async def coap_tx_message_dispatcher(self):
         logger.info("CoAP TX Dispatcher started")
@@ -141,7 +140,7 @@ class IoTGatewayClient(transport.QUICGatewayClient):
                 await asyncio.sleep(5)
 
     async def rx_message_dispatcher(self):
-        logger.info("CoAP RX Dispatcher started")
+        logger.info("RX Dispatcher started")
         while True:
             if self.quic_client:
                 try:
