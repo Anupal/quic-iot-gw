@@ -1,6 +1,7 @@
 import asyncio
 
-from gateway import IoTGatewayClient, CoAPClientContext
+from gateway import IoTGatewayClient
+from iot_protocols import CoAPClientContext
 
 
 async def main():
