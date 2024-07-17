@@ -26,6 +26,7 @@ class QUICGatewayClient:
             if isinstance(event, HandshakeCompleted):
                 logger.info("QUIC handshake completed")
                 asyncio.ensure_future(self.quic_writer())
+                asyncio.ensure_future(self._keep_alive())
 
             # add received data to read queue (reader task)
             elif isinstance(event, StreamDataReceived):
@@ -38,6 +39,12 @@ class QUICGatewayClient:
         async def get_data(self):
             response = await self.quic_client_read_queue.get()
             return response
+
+        async def _keep_alive(self):
+            logger.info("Started Keep-Alive task (will send every 10 seconds)")
+            while True:
+                await asyncio.sleep(10)  # Send ping every 10 seconds
+                await self.ping()
 
         async def quic_writer(self):
             while True:
