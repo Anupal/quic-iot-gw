@@ -5,107 +5,14 @@ import asyncio
 import asyncio_dgram
 
 import transport
+from iot_protocols import CoAPServerContext
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class ClientContext:
-    def __init__(self):
-        self.read_queue = asyncio.Queue()
-        self.write_queue = asyncio.Queue()
-        self.reader_task = None
-        self.writer_task = None
-
-    async def run(self):
-        """
-        To be overridden by subclasses. Setup IO stream for application protocol, Setup rx/tx queues and tasks.
-        """
-        ...
-
-    async def application_reader(self, *args, **kwargs):
-        """
-        Setup reader task to run in background. This will put received data from application protocol io in read_queue.
-        """
-        ...
-
-    async def application_writer(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        """
-        Setup writer task to run in background. This will read data in write_queue and send it to application protocol io.
-        """
-
-    async def handle_read_message(self):
-        """
-        Read data from read queue and save request information like MID, client address.
-        """
-
-    async def handle_write_message(self, data):
-        """
-        Write to write queue and send it to application protocol io.
-        """
-
-    def is_valid(self, data) -> bool:
-        ...
-
-
-class CoAPClientContext(ClientContext):
-    def __init__(self, host, port):
-        super().__init__()
-        self.host, self.port = host, port
-        self._pending_requests = {}
-
-    async def run(self):
-        logger.info(f"Starting CoAP Proxy server on {self.host}:{self.port}")
-        udp_stream = await asyncio_dgram.bind((self.host, self.port))
-
-        self.reader_task = asyncio.create_task(self.application_reader(udp_stream))
-        self.writer_task = asyncio.create_task(self.application_writer(udp_stream))
-
-        await asyncio.gather(self.reader_task, self.writer_task)
-
-    async def application_reader(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        logger.info("Datagram reader started")
-        while True:
-            data, client_addr = await udp_stream.recv()
-            logger.info(
-                f"Received datagram length = {len(data)}, data = {data}, source = {client_addr}"
-            )
-            await self.read_queue.put((data, client_addr))
-
-    async def application_writer(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        logger.info("Datagram writer started")
-        while True:
-            data, client_addr = await self.write_queue.get()
-            logger.info(
-                f"Sending datagram length = {len(data)}, data = {data}, destination = {client_addr}"
-            )
-            await udp_stream.send(data, client_addr)
-
-    async def handle_read_message(self):
-        data, client_address = await self.read_queue.get()
-        logger.info(f"Handling CoAP request from {client_address}")
-        coap_data = aiocoap.Message.decode(data)
-        self._pending_requests[(coap_data.token, coap_data.mid)] = client_address
-        return data
-
-    async def handle_write_message(self, data):
-        logger.info(f"Handling CoAP response")
-        coap_data = aiocoap.Message.decode(data)
-        logger.info(f"Decoded CoAP response = {coap_data}")
-        if (coap_data.token, coap_data.mid) in self._pending_requests:
-            client_address = self._pending_requests.pop((coap_data.token, coap_data.mid))
-            await self.write_queue.put((data, client_address))
-
-    def is_valid(self, data):
-        try:
-            message = aiocoap.Message.decode(data)
-            # check code type is Unknown if parsing passes
-            return "Unknown" not in message.code.name_printable
-        except:
-            return False
-
-# todo: add is_valid packet and use it for figuring out packet type in rx/tx handler
 # todo: figure out bidirectional flow
+# todo: stream id mapping in protocol context
 
 
 class IoTGatewayClient(transport.QUICGatewayClient):
@@ -156,74 +63,20 @@ class IoTGatewayClient(transport.QUICGatewayClient):
                 await asyncio.sleep(5)
 
 
-class ServerContext:
-    async def handle_read_message(self, data):
-        """
-        Read data from read queue and save request information like MID, client address.
-        """
-
-    async def handle_write_message(self, data):
-        """
-        Write to write queue and send it to application protocol io.
-        """
-
-    def is_valid(self, data) -> bool:
-        ...
-
-
-class CoAPServerContext(ServerContext):
-    async def handle_read_message(self, data):
-        coap_request = aiocoap.Message.decode(data)
-        if coap_request.opt.proxy_uri is None:
-            logger.warning("Proxy-URI option missing in request")
-            response = aiocoap.Message(code=aiocoap.BAD_OPTION)
-        else:
-            target_uri = coap_request.opt.proxy_uri
-            logger.info(f"Proxying request to {target_uri}")
-
-            # Forward the CoAP request to the actual server
-            protocol = await aiocoap.Context.create_client_context()
-            proxy_request = aiocoap.Message(code=coap_request.code, uri=target_uri, payload=coap_request.payload)
-
-            try:
-                coap_response = await protocol.request(proxy_request).response
-                logger.info(f"Forwarded request to {target_uri}, received response: {coap_response} payload: "
-                            f"'{coap_response.payload}'")
-                response = coap_response
-            except Exception as e:
-                logger.error(f"Failed to get response from server: {e}")
-                response = aiocoap.Message(code=aiocoap.INTERNAL_SERVER_ERROR)
-
-        response.mid = coap_request.mid
-        response.token = coap_request.token
-        return response.encode()
-
-    async def handle_write_message(self, data):
-        ...
-
-    def is_valid(self, data) -> bool:
-        try:
-            message = aiocoap.Message.decode(data)
-            # check code type is Unknown if parsing passes
-            return "Unknown" not in message.code.name_printable
-        except:
-            return False
-
-
 class IoTGatewayServerProtocol(transport.QUICGatewayServerProtocol):
     async def tx_message_dispatcher(self):
         logger.info("TX Dispatcher started")
 
     async def rx_message_dispatcher(self):
-        coap_server_context = CoAPServerContext()
+        coap_context = CoAPServerContext()
         logger.info("RX Dispatcher started")
         while True:
             try:
                 stream_id, data = await self.get_data()
                 logger.info(f"RX Dispatcher - {stream_id}: {data}")
 
-                if coap_server_context.is_valid(data):
-                    response = await coap_server_context.handle_read_message(data)
+                if coap_context.is_valid(data):
+                    response = await coap_context.handle_read_message(data)
                     await self.send_data(stream_id, response)
             except Exception as e:
                 logger.error("RX Dispatcher - error in received data...")
