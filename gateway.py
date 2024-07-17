@@ -44,6 +44,9 @@ class ClientContext:
         Write to write queue and send it to application protocol io.
         """
 
+    def is_valid(self, data) -> bool:
+        ...
+
 
 class CoAPClientContext(ClientContext):
     def __init__(self, host, port):
@@ -93,6 +96,14 @@ class CoAPClientContext(ClientContext):
             client_address = self._pending_requests.pop((coap_data.token, coap_data.mid))
             await self.write_queue.put((data, client_address))
 
+    def is_valid(self, data):
+        try:
+            message = aiocoap.Message.decode(data)
+            # check code type is Unknown if parsing passes
+            return "Unknown" not in message.code.name_printable
+        except:
+            return False
+
 # todo: add is_valid packet and use it for figuring out packet type in rx/tx handler
 # todo: figure out bidirectional flow
 
@@ -106,7 +117,7 @@ class IoTGatewayClient(transport.QUICGatewayClient):
 
     async def run(self):
         coap_tx_task = asyncio.create_task(self.coap_tx_message_dispatcher())
-        coap_rx_task = asyncio.create_task(self.coap_rx_message_dispatcher())
+        coap_rx_task = asyncio.create_task(self.rx_message_dispatcher())
 
         await self.init_quic_client()
         await asyncio.gather(coap_tx_task, coap_rx_task)
@@ -129,14 +140,15 @@ class IoTGatewayClient(transport.QUICGatewayClient):
                 logger.error("TX Dispatcher - no quic client available, retrying after 5 seconds.")
                 await asyncio.sleep(5)
 
-    async def coap_rx_message_dispatcher(self):
+    async def rx_message_dispatcher(self):
         logger.info("CoAP RX Dispatcher started")
         while True:
             if self.quic_client:
                 try:
                     stream_id, data = await self.quic_client.get_data()
                     logger.info(f"RX Dispatcher - {stream_id}: {data}")
-                    await self.coap_context.handle_write_message(data)
+                    if self.coap_context.is_valid(data):
+                        await self.coap_context.handle_write_message(data)
                 except Exception as e:
                     logger.error("RX Dispatcher - Error occurred when handling CoAP message...")
                     logger.exception(e)
@@ -156,7 +168,7 @@ class ServerContext:
         Write to write queue and send it to application protocol io.
         """
 
-    def is_valid(self, data):
+    def is_valid(self, data) -> bool:
         ...
 
 
@@ -190,7 +202,7 @@ class CoAPServerContext(ServerContext):
     async def handle_write_message(self, data):
         ...
 
-    def is_valid(self, data):
+    def is_valid(self, data) -> bool:
         try:
             message = aiocoap.Message.decode(data)
             # check code type is Unknown if parsing passes
