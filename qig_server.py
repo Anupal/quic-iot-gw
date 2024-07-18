@@ -1,7 +1,8 @@
 import asyncio
 
 from transport import init_quic_server
-from gateway import IoTGatewayServerProtocol
+from context import CoAPServerContext, MQTTSNGWServerContext
+from gateway import iot_gateway_server_protocol_factory
 
 
 async def main():
@@ -11,7 +12,10 @@ async def main():
         "cert.pem",
         "key.pem",
         True,
-        IoTGatewayServerProtocol
+        iot_gateway_server_protocol_factory(
+            coap_context=CoAPServerContext(),
+            mqtt_sn_context=MQTTSNGWServerContext("localhost", 1883)
+        ),
     )
     # Keep the server running
     await asyncio.get_running_loop().create_future()
