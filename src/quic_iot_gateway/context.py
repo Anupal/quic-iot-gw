@@ -7,7 +7,7 @@ import asyncio
 import asyncio_dgram
 import aiomqtt
 
-import qig.mqtt_sn as mqtt_sn
+import quic_iot_gateway.mqtt_sn as mqtt_sn
 
 
 logging.basicConfig(level=logging.INFO)

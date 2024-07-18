@@ -1,8 +1,8 @@
 import asyncio
 
-from qig.transport import init_quic_server
-from qig.context import CoAPServerContext, MQTTSNGWServerContext
-from qig.gateway import iot_gateway_server_protocol_factory
+from quic_iot_gateway.transport import init_quic_server
+from quic_iot_gateway.context import CoAPServerContext, MQTTSNGWServerContext
+from quic_iot_gateway.gateway import iot_gateway_server_protocol_factory
 
 
 async def asyncio_main():

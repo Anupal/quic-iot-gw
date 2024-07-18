@@ -2,7 +2,7 @@ import logging
 
 import asyncio
 
-import qig.transport as transport
+import quic_iot_gateway.transport as transport
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
