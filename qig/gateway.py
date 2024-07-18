@@ -115,6 +115,8 @@ class IoTGatewayServerProtocolTemplate(transport.QUICGatewayServerProtocol):
 
 
 def iot_gateway_server_protocol_factory(coap_context, mqtt_sn_context, **kwargs):
+    asyncio.ensure_future(coap_context.run())
+    asyncio.ensure_future(mqtt_sn_context.run())
     return type(
         'IoTGatewayServerProtocol',
         (IoTGatewayServerProtocolTemplate,),
