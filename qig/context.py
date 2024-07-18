@@ -5,7 +5,7 @@ from typing import Tuple
 import aiocoap
 import asyncio
 import asyncio_dgram
-import paho.mqtt.client as mqtt
+import aiomqtt
 
 import qig.mqtt_sn as mqtt_sn
 
