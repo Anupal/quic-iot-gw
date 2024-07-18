@@ -293,12 +293,12 @@ class ServerContext:
 
     async def handle_read_message(self, data):
         """
-        Read data from read queue and save request information like MID, client address.
+        Handle data received from application protocol io.
         """
 
     async def handle_write_message(self, data):
         """
-        Write to write queue and send it to application protocol io.
+        Handle data received from QUIC and send it to application protocol io.
         """
 
     def is_valid(self, data) -> bool:
@@ -307,6 +307,9 @@ class ServerContext:
 
 class CoAPServerContext(ServerContext):
     async def handle_read_message(self, data):
+        ...
+
+    async def handle_write_message(self, data):
         coap_request = aiocoap.Message.decode(data)
         if coap_request.opt.proxy_uri is None:
             logger.warning("Proxy-URI option missing in request")
@@ -331,9 +334,6 @@ class CoAPServerContext(ServerContext):
         response.mid = coap_request.mid
         response.token = coap_request.token
         return response.encode()
-
-    async def handle_write_message(self, data):
-        ...
 
     def is_valid(self, data) -> bool:
         try:
@@ -368,6 +368,9 @@ class MQTTSNGWServerContext(ServerContext):
             self.mqtt_client = None
 
     async def handle_read_message(self, data):
+        ...
+
+    async def handle_write_message(self, data):
         mqtt_message_dict = json.loads(data.decode())
         if self.mqtt_client:
             if mqtt_message_dict["type"] == "PUBLISH":
@@ -385,9 +388,6 @@ class MQTTSNGWServerContext(ServerContext):
                 self.mqtt_client.subscribe(mqtt_message_dict["topic_name"], qos=mqtt_message_dict["qos"])
         else:
             logger.error("Cannot forward MQTT message. Not connected to MQTT broker.")
-
-    async def handle_write_message(self, data):
-        ...
 
     def is_valid(self, data) -> bool:
         try:

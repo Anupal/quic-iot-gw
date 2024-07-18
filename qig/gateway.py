@@ -104,11 +104,11 @@ class IoTGatewayServerProtocolTemplate(transport.QUICGatewayServerProtocol):
                 logger.info(f"RX Dispatcher - {stream_id}: {data}")
 
                 if self.coap_context.is_valid(data):
-                    response = await self.coap_context.handle_read_message(data)
+                    response = await self.coap_context.handle_write_message(data)
                     await self.send_data(stream_id, response)
 
                 if self.mqtt_sn_context.is_valid(data):
-                    await self.mqtt_sn_context.handle_read_message(data)
+                    await self.mqtt_sn_context.handle_write_message(data)
             except Exception as e:
                 logger.error("RX Dispatcher - error in received data...")
                 logger.exception(e)
