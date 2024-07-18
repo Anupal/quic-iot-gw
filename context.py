@@ -1,12 +1,14 @@
+import json
 import logging
 from typing import Tuple
 
 import aiocoap
 import asyncio
 import asyncio_dgram
+import paho.mqtt.client as mqtt
 
 import mqtt_sn
-# from mqtt_sn import MQTTSNPacketDecoder, MQTTSNPacketEncoder, MessageType, ReturnCode, RegisteredTopics
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -121,7 +123,13 @@ class MQTTSNGWClientContext(ClientContext):
                         stream_id = get_next_stream_id()
                         self._device_stream_map[client_address] = stream_id
                         self._stream_device_map[stream_id] = client_address
-                    return data, stream_id
+
+                    decoded_message["topic_name"] = self.registered_topics.topic_id_to_name(
+                        self.mqtt_sn_clients[client_address]["client_id"],
+                        decoded_message["topic_id"]
+                    )
+                    mqtt_publish_json = json.dumps(decoded_message).encode()
+                    return mqtt_publish_json, stream_id
             else:
                 logger.error(f"PUBLISH received from unknown client '{client_address}'")
                 logger.info(f"Sending DISCONNECT message to {client_address}")
@@ -315,5 +323,35 @@ class CoAPServerContext(ServerContext):
             message = aiocoap.Message.decode(data)
             # check code type is Unknown if parsing passes
             return "Unknown" not in message.code.name_printable
+        except:
+            return False
+
+
+class MQTTSNGWServerContext(ServerContext):
+    def __init__(self, broker_address, broker_port):
+        self._broker_address = broker_address
+        self._broker_port = broker_port
+
+    async def handle_read_message(self, data):
+        mqtt_message_dict = json.loads(data.decode())
+        client = mqtt.Client()
+
+        # Connect to the MQTT broker
+        # todo: maybe a long lived connection, also should be handled using a separate task to avoid blocking.
+        client.connect(self._broker_address, self._broker_port, 60)
+        client.publish(
+            mqtt_message_dict["topic_name"],
+            mqtt_message_dict["data"],
+            qos=mqtt_message_dict["flags"]["qos"],
+            retain=mqtt_message_dict["flags"]["retain"],
+        )
+
+    async def handle_write_message(self, data):
+        ...
+
+    def is_valid(self, data) -> bool:
+        try:
+            json.loads(data.decode())
+            return True
         except:
             return False
