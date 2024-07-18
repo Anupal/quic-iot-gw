@@ -1,10 +1,10 @@
 import asyncio
 
-from gateway import IoTGatewayClient
-from context import CoAPClientContext, MQTTSNGWClientContext
+from qig.gateway import IoTGatewayClient
+from qig.context import CoAPClientContext, MQTTSNGWClientContext
 
 
-async def main():
+async def asyncio_main():
     client = IoTGatewayClient(
         quic_server_host="127.0.0.1",
         quic_server_port=4433,
@@ -14,5 +14,10 @@ async def main():
     )
     await client.run()
 
+
+def main():
+    asyncio.run(asyncio_main())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

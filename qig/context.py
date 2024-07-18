@@ -5,9 +5,9 @@ from typing import Tuple
 import aiocoap
 import asyncio
 import asyncio_dgram
-import paho.mqtt.client as mqtt
+import aiomqtt
 
-import mqtt_sn
+import qig.mqtt_sn as mqtt_sn
 
 
 logging.basicConfig(level=logging.INFO)
@@ -124,11 +124,18 @@ class MQTTSNGWClientContext(ClientContext):
                         self._device_stream_map[client_address] = stream_id
                         self._stream_device_map[stream_id] = client_address
 
-                    decoded_message["topic_name"] = self.registered_topics.topic_id_to_name(
-                        self.mqtt_sn_clients[client_address]["client_id"],
-                        decoded_message["topic_id"]
-                    )
-                    mqtt_publish_json = json.dumps(decoded_message).encode()
+                    # send MQTT packet data as JSON, so it can be published by the Server context
+                    mqtt_publish_dict = {
+                        "type": "PUBLISH",
+                        "topic_name": self.registered_topics.topic_id_to_name(
+                            self.mqtt_sn_clients[client_address]["client_id"],
+                            decoded_message["topic_id"]
+                        ),
+                        "data": decoded_message["data"],
+                        "qos": decoded_message["flags"]["qos"],
+                        "retain": decoded_message["flags"]["retain"],
+                    }
+                    mqtt_publish_json = json.dumps(mqtt_publish_dict).encode()
                     return mqtt_publish_json, stream_id
             else:
                 logger.error(f"PUBLISH received from unknown client '{client_address}'")
@@ -274,14 +281,24 @@ class CoAPClientContext(ClientContext):
 
 
 class ServerContext:
+    def __init__(self):
+        self.read_queue = asyncio.Queue()
+        self.write_queue = asyncio.Queue()
+
+    async def run(self):
+        """
+        To be overridden by subclasses. Setup IO stream for application protocol, Setup rx/tx queues and tasks.
+        """
+        ...
+
     async def handle_read_message(self, data):
         """
-        Read data from read queue and save request information like MID, client address.
+        Handle data received from application protocol io.
         """
 
     async def handle_write_message(self, data):
         """
-        Write to write queue and send it to application protocol io.
+        Handle data received from QUIC and send it to application protocol io.
         """
 
     def is_valid(self, data) -> bool:
@@ -290,6 +307,9 @@ class ServerContext:
 
 class CoAPServerContext(ServerContext):
     async def handle_read_message(self, data):
+        ...
+
+    async def handle_write_message(self, data):
         coap_request = aiocoap.Message.decode(data)
         if coap_request.opt.proxy_uri is None:
             logger.warning("Proxy-URI option missing in request")
@@ -315,9 +335,6 @@ class CoAPServerContext(ServerContext):
         response.token = coap_request.token
         return response.encode()
 
-    async def handle_write_message(self, data):
-        ...
-
     def is_valid(self, data) -> bool:
         try:
             message = aiocoap.Message.decode(data)
@@ -329,25 +346,56 @@ class CoAPServerContext(ServerContext):
 
 class MQTTSNGWServerContext(ServerContext):
     def __init__(self, broker_address, broker_port):
+        super().__init__()
         self._broker_address = broker_address
         self._broker_port = broker_port
+        self.mqtt_client = None
+
+    async def run(self):
+        while True:
+            logger.info(f"Connecting to MQTT Broker ({self._broker_address}:{self._broker_port})")
+            try:
+                async with aiomqtt.client.Client(self._broker_address, self._broker_port) as mqtt_client:
+                    self.mqtt_client = mqtt_client
+
+                    async for message in self.mqtt_client.messages:
+                        logger.info(f"MQTT Message from Broker: {message.topic} {message.payload}")
+                        await self.read_queue.put((message.topic, message.payload))
+            except Exception as e:
+                logger.error("Disconnected from MQTT Broker, retrying after 5 seconds.")
+                logger.exception(e)
+
+            self.mqtt_client = None
 
     async def handle_read_message(self, data):
-        mqtt_message_dict = json.loads(data.decode())
-        client = mqtt.Client()
-
-        # Connect to the MQTT broker
-        # todo: maybe a long lived connection, also should be handled using a separate task to avoid blocking.
-        client.connect(self._broker_address, self._broker_port, 60)
-        client.publish(
-            mqtt_message_dict["topic_name"],
-            mqtt_message_dict["data"],
-            qos=mqtt_message_dict["flags"]["qos"],
-            retain=mqtt_message_dict["flags"]["retain"],
-        )
+        mqtt_message = await self.read_queue.get()
+        mqtt_publish_dict = {
+            "type": "PUBLISH",
+            "topic_name": str(mqtt_message.topic),
+            "data": str(mqtt_message.paylaod),
+            "qos": mqtt_message.qos,
+            "retain": mqtt_message.retain,
+        }
+        return json.dumps(mqtt_publish_dict).encode()
 
     async def handle_write_message(self, data):
-        ...
+        mqtt_message_dict = json.loads(data.decode())
+        if self.mqtt_client:
+            if mqtt_message_dict["type"] == "PUBLISH":
+                logger.info("Forwarding MQTT PUBLISH to broker")
+                asyncio.ensure_future(
+                    self.mqtt_client.publish(
+                        mqtt_message_dict["topic_name"],
+                        mqtt_message_dict["data"],
+                        qos=mqtt_message_dict["qos"],
+                        retain=mqtt_message_dict["retain"],
+                    )
+                )
+            if mqtt_message_dict["type"] == "SUBSCRIBE":
+                logger.info(f"Subscribing to topic '{mqtt_message_dict['topic_name']}' broker")
+                self.mqtt_client.subscribe(mqtt_message_dict["topic_name"], qos=mqtt_message_dict["qos"])
+        else:
+            logger.error("Cannot forward MQTT message. Not connected to MQTT broker.")
 
     def is_valid(self, data) -> bool:
         try:

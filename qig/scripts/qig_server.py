@@ -1,11 +1,11 @@
 import asyncio
 
-from transport import init_quic_server
-from context import CoAPServerContext, MQTTSNGWServerContext
-from gateway import iot_gateway_server_protocol_factory
+from qig.transport import init_quic_server
+from qig.context import CoAPServerContext, MQTTSNGWServerContext
+from qig.gateway import iot_gateway_server_protocol_factory
 
 
-async def main():
+async def asyncio_main():
     await init_quic_server(
         "127.0.0.1",
         4433,
@@ -21,5 +21,9 @@ async def main():
     await asyncio.get_running_loop().create_future()
 
 
+def main():
+    asyncio.run(asyncio_main())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
