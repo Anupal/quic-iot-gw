@@ -1,11 +1,8 @@
 import logging
 
-import aiocoap
 import asyncio
-import asyncio_dgram
 
-import transport
-from context import CoAPServerContext
+import qig.transport as transport
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -7,7 +7,7 @@ import asyncio
 import asyncio_dgram
 import paho.mqtt.client as mqtt
 
-import mqtt_sn
+import qig.mqtt_sn as mqtt_sn
 
 
 logging.basicConfig(level=logging.INFO)
