@@ -80,7 +80,7 @@ class MQTTSNPacketDecoder:
         client_id = payload[4:].decode('utf-8')
         return {
             "type": MessageType.CONNECT,
-            "flags": flags,
+            "flags": self._decode_flags(flags),
             "protocol_id": protocol_id,
             "duration": duration,
             "client_id": client_id
@@ -94,6 +94,17 @@ class MQTTSNPacketDecoder:
             "return_code": payload[0]
         }
 
+    def _decode_flags(self, flags):
+        # flags = int.from_bytes(flags, "big")
+        return  {
+            "dup": bool(flags & 0b10000000),
+            "qos": (flags & 0b01100000) >> 5,
+            "retain": bool(flags & 0b00010000),
+            "will": bool(flags & 0b00001000),
+            "clean_session": bool(flags & 0b00000100),
+            "topic_type": flags & 0b00000011,
+        }
+
     def _decode_publish(self, payload):
         if len(payload) < 7:
             raise ValueError("Invalid PUBLISH message length")
@@ -103,7 +114,7 @@ class MQTTSNPacketDecoder:
         data = payload[5:].decode('utf-8')
         return {
             "type": MessageType.PUBLISH,
-            "flags": flags,
+            "flags": self._decode_flags(flags),
             "topic_id": topic_id,
             "msg_id": msg_id,
             "data": data
