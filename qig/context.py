@@ -368,7 +368,15 @@ class MQTTSNGWServerContext(ServerContext):
             self.mqtt_client = None
 
     async def handle_read_message(self, data):
-        ...
+        mqtt_message = await self.read_queue.get()
+        mqtt_publish_dict = {
+            "type": "PUBLISH",
+            "topic_name": str(mqtt_message.topic),
+            "data": str(mqtt_message.paylaod),
+            "qos": mqtt_message.qos,
+            "retain": mqtt_message.retain,
+        }
+        return json.dumps(mqtt_publish_dict).encode()
 
     async def handle_write_message(self, data):
         mqtt_message_dict = json.loads(data.decode())
