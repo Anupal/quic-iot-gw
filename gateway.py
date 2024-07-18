@@ -92,21 +92,38 @@ class IoTGatewayClient(transport.QUICGatewayClient):
                 await asyncio.sleep(5)
 
 
-class IoTGatewayServerProtocol(transport.QUICGatewayServerProtocol):
+class IoTGatewayServerProtocolTemplate(transport.QUICGatewayServerProtocol):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     async def tx_message_dispatcher(self):
         logger.info("TX Dispatcher started")
 
     async def rx_message_dispatcher(self):
-        coap_context = CoAPServerContext()
         logger.info("RX Dispatcher started")
         while True:
             try:
                 stream_id, data = await self.get_data()
                 logger.info(f"RX Dispatcher - {stream_id}: {data}")
 
-                if coap_context.is_valid(data):
-                    response = await coap_context.handle_read_message(data)
+                if self.coap_context.is_valid(data):
+                    response = await self.coap_context.handle_read_message(data)
                     await self.send_data(stream_id, response)
+
+                if self.mqtt_sn_context.is_valid(data):
+                    await self.mqtt_sn_context.handle_read_message(data)
             except Exception as e:
                 logger.error("RX Dispatcher - error in received data...")
                 logger.exception(e)
+
+
+def iot_gateway_server_protocol_factory(coap_context, mqtt_sn_context, **kwargs):
+    return type(
+        'IoTGatewayServerProtocol',
+        (IoTGatewayServerProtocolTemplate,),
+        {
+            'coap_context': coap_context,
+            'mqtt_sn_context': mqtt_sn_context,
+            **kwargs
+        }
+    )
