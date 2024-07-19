@@ -396,7 +396,7 @@ class MQTTSNGWServerContext(ServerContext):
             if mqtt_message_dict["type"] == "PUBLISH":
                 logger.info("Forwarding MQTT PUBLISH to broker")
                 try:
-                    self.mqtt_client.publish(
+                    await self.mqtt_client.publish(
                         mqtt_message_dict["topic_name"],
                         mqtt_message_dict["data"],
                         qos=mqtt_message_dict["qos"],
@@ -408,7 +408,7 @@ class MQTTSNGWServerContext(ServerContext):
             if mqtt_message_dict["type"] == "SUBSCRIBE":
                 logger.info(f"Subscribing to topic '{mqtt_message_dict['topic_name']}' broker")
                 try:
-                    self.mqtt_client.subscribe(mqtt_message_dict["topic_name"], qos=mqtt_message_dict["qos"])
+                    await self.mqtt_client.subscribe(mqtt_message_dict["topic_name"], qos=mqtt_message_dict["qos"])
                 except Exception as e:
                     logger.error(f"Failed to subscribe to broker with topic '{mqtt_message_dict['topic_name']}'")
                     logger.exception(e)
