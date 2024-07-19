@@ -1,5 +1,4 @@
 import json
-import logging
 from typing import Tuple
 
 import aiocoap
@@ -7,11 +6,10 @@ import asyncio
 import asyncio_dgram
 import aiomqtt
 
-import qig.mqtt_sn as mqtt_sn
+import quic_iot_gateway.mqtt_sn as mqtt_sn
+from quic_iot_gateway.utils import setup_logger
 
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class ClientContext:
@@ -66,35 +64,46 @@ class MQTTSNGWClientContext(ClientContext):
         self.registered_topics = mqtt_sn.RegisteredTopics()
 
     async def run(self):
-        logger.info(f"Starting MQTT-SN GW on {self.host}:{self.port}")
-        udp_stream = await asyncio_dgram.bind((self.host, self.port))
+        logger.info(f"Starting MQTT-SN-GW on {self.host}:{self.port}")
+
+        try:
+            udp_stream = await asyncio_dgram.bind((self.host, self.port))
+        except OSError as e:
+            logger.error(f"Unable to reserve ({self.host}:{self.port}) for MQTT-SN-GW as it is in use, exiting...")
+            return
+
         self.reader_task = asyncio.create_task(self.application_reader(udp_stream))
         self.writer_task = asyncio.create_task(self.application_writer(udp_stream))
 
         await asyncio.gather(self.reader_task, self.writer_task)
 
     async def application_reader(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        logger.info("Datagram reader started")
+        logger.info("MQTT-SN-GW Datagram reader started")
         while True:
             data, client_addr = await udp_stream.recv()
             logger.info(
-                f"Received datagram length = {len(data)}, data = {data}, source = {client_addr}"
+                f"MQTT-SN-GW - Received datagram length = {len(data)}, data = {data}, source = {client_addr}"
             )
             await self.read_queue.put((data, client_addr))
 
     async def application_writer(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        logger.info("Datagram writer started")
+        logger.info("MQTT-SN-GW Datagram writer started")
         while True:
             data, client_addr = await self.write_queue.get()
             logger.info(
-                f"Sending datagram length = {len(data)}, data = {data}, destination = {client_addr}"
+                f"MQTT-SN-GW - Sending datagram length = {len(data)}, data = {data}, destination = {client_addr}"
             )
             await udp_stream.send(data, client_addr)
 
     async def handle_read_message(self, get_next_stream_id: callable):
         data, client_address = await self.read_queue.get()
 
-        decoded_message = mqtt_sn.decoder.decode(data)
+        try:
+            decoded_message = mqtt_sn.decoder.decode(data)
+        except ValueError as e:
+            logger.warning(f"Unable to decode MQTT-SN-GW message: {data}, error = {e}")
+            return
+
         logger.info(f"Decoded MQTT-SN message: {decoded_message}")
 
         if decoded_message["type"] == mqtt_sn.MessageType.CONNECT:
@@ -106,8 +115,8 @@ class MQTTSNGWClientContext(ClientContext):
                     self.register_handler(decoded_message, self.mqtt_sn_clients[client_address]["client_id"],
                                           client_address))
             else:
-                logger.error(f"REGISTER received from unknown client '{client_address}'")
-                logger.info(f"Sending DISCONNECT message to {client_address}")
+                logger.warning(f"REGISTER received from unknown client '{client_address}'")
+                logger.warning(f"Sending DISCONNECT message to {client_address}")
                 await self.write_queue.put((mqtt_sn.encoder.encode(
                     type=mqtt_sn.MessageType.DISCONNECT
                 ), client_address))
@@ -138,14 +147,14 @@ class MQTTSNGWClientContext(ClientContext):
                     mqtt_publish_json = json.dumps(mqtt_publish_dict).encode()
                     return mqtt_publish_json, stream_id
             else:
-                logger.error(f"PUBLISH received from unknown client '{client_address}'")
-                logger.info(f"Sending DISCONNECT message to {client_address}")
+                logger.warning(f"PUBLISH received from unknown client '{client_address}'")
+                logger.warning(f"Sending DISCONNECT message to {client_address}")
                 await self.write_queue.put((mqtt_sn.encoder.encode(
                     type=mqtt_sn.MessageType.DISCONNECT
                 ), client_address))
 
     async def connect_handler(self, message, remote_addr):
-        logger.info(f"Add MQTT-SN client '{remote_addr}' -> '{message['client_id']}'")
+        logger.info(f"Save MQTT-SN client '{remote_addr}' with client id' {message['client_id']}'.")
         self.mqtt_sn_clients[remote_addr] = {
             "client_id": message["client_id"], "duration": message["duration"]
         }
@@ -154,7 +163,7 @@ class MQTTSNGWClientContext(ClientContext):
             return_code=mqtt_sn.ReturnCode.ACCEPTED
         )
         logger.info(f"Sending CONNACK message: {connack_message} to {remote_addr}")
-        await self.write_queue.put((connack_message , remote_addr))
+        await self.write_queue.put((connack_message, remote_addr))
 
     async def register_handler(self, message, client_id, remote_addr):
         topic_name = message["topic_name"]
@@ -184,14 +193,14 @@ class MQTTSNGWClientContext(ClientContext):
             await self.write_queue.put((puback_message, client_address))
             return True
         else:
-            logger.error(f"No associated topic id '{topic_id}' found for MQTT-SN client '{client_id}'")
+            logger.warning(f"No associated topic id '{topic_id}' found for MQTT-SN client '{client_id}'")
             puback_message = mqtt_sn.encoder.encode(
                 type=mqtt_sn.MessageType.PUBACK,
                 topic_id=topic_id,
                 msg_id=message["msg_id"],
                 return_code=mqtt_sn.ReturnCode.INVALID_TOPIC
             )
-            logger.info(f"Sending PUBACK message: {puback_message} to {client_address}")
+            logger.warning(f"Sending PUBACK message: {puback_message} to {client_address}")
             await self.write_queue.put((puback_message, client_address))
 
         return False
@@ -211,13 +220,16 @@ class CoAPClientContext(ClientContext):
     def __init__(self, host, port):
         super().__init__()
         self.host, self.port = host, port
-        # self._pending_requests = {}
         self._device_stream_map = {}
         self._stream_device_map = {}
 
     async def run(self):
         logger.info(f"Starting CoAP Proxy server on {self.host}:{self.port}")
-        udp_stream = await asyncio_dgram.bind((self.host, self.port))
+        try:
+            udp_stream = await asyncio_dgram.bind((self.host, self.port))
+        except OSError as e:
+            logger.error(f"Unable to reserve ({self.host}:{self.port}) for CoAP Proxy as it is in use, exiting...")
+            return
 
         self.reader_task = asyncio.create_task(self.application_reader(udp_stream))
         self.writer_task = asyncio.create_task(self.application_writer(udp_stream))
@@ -225,20 +237,20 @@ class CoAPClientContext(ClientContext):
         await asyncio.gather(self.reader_task, self.writer_task)
 
     async def application_reader(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        logger.info("Datagram reader started")
+        logger.info("CoAP Proxy Datagram reader started")
         while True:
             data, client_addr = await udp_stream.recv()
             logger.info(
-                f"Received datagram length = {len(data)}, data = {data}, source = {client_addr}"
+                f"CoAP Proxy - Received datagram length = {len(data)}, data = {data}, source = {client_addr}"
             )
             await self.read_queue.put((data, client_addr))
 
     async def application_writer(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        logger.info("Datagram writer started")
+        logger.info("CoAP Proxy Datagram writer started")
         while True:
             data, client_addr = await self.write_queue.get()
             logger.info(
-                f"Sending datagram length = {len(data)}, data = {data}, destination = {client_addr}"
+                f"CoAP Proxy - Sending datagram length = {len(data)}, data = {data}, destination = {client_addr}"
             )
             await udp_stream.send(data, client_addr)
 
@@ -252,19 +264,18 @@ class CoAPClientContext(ClientContext):
             self._stream_device_map[stream_id] = client_address
 
         logger.info(f"Handling CoAP request from {client_address}")
-        coap_data = aiocoap.Message.decode(data)
-        # self._pending_requests[(coap_data.token, coap_data.mid)] = client_address
         return data, stream_id
 
     async def handle_write_message(self, data, stream_id):
         logger.info(f"Handling CoAP response")
-        coap_data = aiocoap.Message.decode(data)
-        logger.info(f"Decoded CoAP response = {coap_data}")
-        if stream_id in self._stream_device_map:
-        # if (coap_data.token, coap_data.mid) in self._pending_requests:
-            # client_address = self._pending_requests.pop((coap_data.token, coap_data.mid))
-            client_address = self._stream_device_map[stream_id]
-            await self.write_queue.put((data, client_address))
+        if self.is_valid(data):
+            coap_data = aiocoap.Message.decode(data)
+            logger.info(f"Decoded CoAP response = {coap_data}")
+            if stream_id in self._stream_device_map:
+                client_address = self._stream_device_map[stream_id]
+                await self.write_queue.put((data, client_address))
+        else:
+            logger.warning(f"Invalid CoAP response received on stream id {stream_id}")
 
     def is_valid(self, data):
         try:
@@ -276,7 +287,6 @@ class CoAPClientContext(ClientContext):
 
     def reset(self):
         logger.info("Resetting CoAP context - cleared pending requests, stream ids")
-        # self._pending_requests = {}
         self._device_stream_map = {}
 
 
@@ -362,8 +372,10 @@ class MQTTSNGWServerContext(ServerContext):
                         logger.info(f"MQTT Message from Broker: {message.topic} {message.payload}")
                         await self.read_queue.put((message.topic, message.payload))
             except Exception as e:
+                self.mqtt_client = None
                 logger.error("Disconnected from MQTT Broker, retrying after 5 seconds.")
                 logger.exception(e)
+                await asyncio.sleep(5)
 
             self.mqtt_client = None
 
@@ -383,19 +395,25 @@ class MQTTSNGWServerContext(ServerContext):
         if self.mqtt_client:
             if mqtt_message_dict["type"] == "PUBLISH":
                 logger.info("Forwarding MQTT PUBLISH to broker")
-                asyncio.ensure_future(
+                try:
                     self.mqtt_client.publish(
                         mqtt_message_dict["topic_name"],
                         mqtt_message_dict["data"],
                         qos=mqtt_message_dict["qos"],
                         retain=mqtt_message_dict["retain"],
                     )
-                )
+                except Exception as e:
+                    logger.error(f"Failed to publish to broker")
+                    logger.exception(e)
             if mqtt_message_dict["type"] == "SUBSCRIBE":
                 logger.info(f"Subscribing to topic '{mqtt_message_dict['topic_name']}' broker")
-                self.mqtt_client.subscribe(mqtt_message_dict["topic_name"], qos=mqtt_message_dict["qos"])
+                try:
+                    self.mqtt_client.subscribe(mqtt_message_dict["topic_name"], qos=mqtt_message_dict["qos"])
+                except Exception as e:
+                    logger.error(f"Failed to subscribe to broker with topic '{mqtt_message_dict['topic_name']}'")
+                    logger.exception(e)
         else:
-            logger.error("Cannot forward MQTT message. Not connected to MQTT broker.")
+            logger.error(f"Cannot forward MQTT message: {data}. Not connected to MQTT broker.")
 
     def is_valid(self, data) -> bool:
         try:

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quic_iot_gateway"
+version = "0.1"
+authors = [
+  { name="Anupal Mishra", email="anupalmishra@gmail.com" },
+]
+description = "Multi-protocol aggregation over QUIC for IoT communication."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "aioquic",
+    "aiocoap",
+    "aiomqtt",
+    "asyncio-dgram",
+    "colorlog"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+qig_server = "quic_iot_gateway.scripts.qig_server:main"
+qig_client = "quic_iot_gateway.scripts.qig_client:main"
+
+[project.urls]
+Homepage = "https://github.com/Anupal/quic-iot-gw"
+Issues = "https://github.com/Anupal/quic-iot-gw/issues"

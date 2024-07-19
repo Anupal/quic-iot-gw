@@ -1,14 +1,9 @@
-import logging
-
 import asyncio
 
-import qig.transport as transport
+import quic_iot_gateway.transport as transport
+from quic_iot_gateway.utils import setup_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-# todo: figure out bidirectional flow
+logger = setup_logger(__name__)
 
 
 class IoTGatewayClient(transport.QUICGatewayClient):
