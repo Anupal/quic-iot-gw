@@ -1,9 +1,5 @@
-import logging
 import struct
 from enum import IntEnum
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 class MessageType(IntEnum):

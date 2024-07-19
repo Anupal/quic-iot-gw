@@ -15,7 +15,8 @@ dependencies = [
     "aioquic",
     "aiocoap",
     "aiomqtt",
-    "asyncio-dgram"
+    "asyncio-dgram",
+    "colorlog"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

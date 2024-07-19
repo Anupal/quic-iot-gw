@@ -1,5 +1,4 @@
 import json
-import logging
 from typing import Tuple
 
 import aiocoap
@@ -8,10 +7,9 @@ import asyncio_dgram
 import aiomqtt
 
 import quic_iot_gateway.mqtt_sn as mqtt_sn
+from quic_iot_gateway.utils import setup_logger
 
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class ClientContext:
@@ -74,7 +72,7 @@ class MQTTSNGWClientContext(ClientContext):
         await asyncio.gather(self.reader_task, self.writer_task)
 
     async def application_reader(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        logger.info("Datagram reader started")
+        logger.info("MQTT-SN GW Datagram reader started")
         while True:
             data, client_addr = await udp_stream.recv()
             logger.info(
@@ -83,7 +81,7 @@ class MQTTSNGWClientContext(ClientContext):
             await self.read_queue.put((data, client_addr))
 
     async def application_writer(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        logger.info("Datagram writer started")
+        logger.info("MQTT-SN GW Datagram writer started")
         while True:
             data, client_addr = await self.write_queue.get()
             logger.info(
@@ -225,7 +223,7 @@ class CoAPClientContext(ClientContext):
         await asyncio.gather(self.reader_task, self.writer_task)
 
     async def application_reader(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        logger.info("Datagram reader started")
+        logger.info("CoAP Proxy Datagram reader started")
         while True:
             data, client_addr = await udp_stream.recv()
             logger.info(
@@ -234,7 +232,7 @@ class CoAPClientContext(ClientContext):
             await self.read_queue.put((data, client_addr))
 
     async def application_writer(self, udp_stream: asyncio_dgram.aio.DatagramServer):
-        logger.info("Datagram writer started")
+        logger.info("CoAP Proxy Datagram writer started")
         while True:
             data, client_addr = await self.write_queue.get()
             logger.info(
