@@ -175,7 +175,7 @@ class QUICGatewayServerProtocol(QuicConnectionProtocol):
             asyncio.ensure_future(self.init_tasks())
 
         elif isinstance(event, StreamDataReceived):
-            logger.info(f"Received from client-proxy, payload: '{event.data}' on stream '{event.stream_id}'")
+            logger.info(f"Received from client-proxy, payload: '{repr(event.data)}' on stream '{event.stream_id}'")
             asyncio.ensure_future(self.quic_server_read_queue.put((event.stream_id, event.data)))
 
     async def init_tasks(self):
@@ -194,7 +194,7 @@ class QUICGatewayServerProtocol(QuicConnectionProtocol):
     async def quic_writer(self):
         while True:
             stream_id, payload = await self.quic_server_write_queue.get()
-            logger.info(f"Sending to server-proxy, payload: '{payload}' over stream '{stream_id}'")
+            logger.info(f"Sending to client-proxy, payload: '{repr(payload)}' over stream '{stream_id}'")
             self._quic.send_stream_data(stream_id, payload)
             self.transmit()
 
@@ -214,7 +214,7 @@ class QUICGatewayServerProtocol(QuicConnectionProtocol):
         while True:
             try:
                 stream_id, data = await self.get_data()
-                logger.info(f"RX Dispatcher - {stream_id}: {data.decode()}")
+                logger.info(f"RX Dispatcher - {stream_id}: {repr(data.decode)}")
                 await self.send_data(stream_id, f"{data.decode()} BACK".encode())
             except Exception as e:
                 logger.error("RX Dispatcher - error in received data...")
