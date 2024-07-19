@@ -67,7 +67,7 @@ class MQTTSNPacketDecoder:
         elif message_type == MessageType.REGACK:
             return self._decode_regack(message)
         else:
-            return None
+            raise ValueError("Unknown/Unsupported message type")
 
     def _decode_connect(self, payload):
         if len(payload) < 6:
