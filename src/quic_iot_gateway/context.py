@@ -323,7 +323,7 @@ class CoAPServerContext(ServerContext):
         coap_request = aiocoap.Message.decode(data)
         if coap_request.opt.proxy_uri is None:
             logger.warning("Proxy-URI option missing in request")
-            response = aiocoap.Message(code=aiocoap.BAD_OPTION)
+            response = aiocoap.Message(code=aiocoap.BAD_OPTION, mtype=aiocoap.Type.ACK)
         else:
             target_uri = coap_request.opt.proxy_uri
             logger.info(f"Proxying request to {target_uri}")
@@ -339,7 +339,7 @@ class CoAPServerContext(ServerContext):
                 response = coap_response
             except Exception as e:
                 logger.error(f"Failed to get response from server: {e}")
-                response = aiocoap.Message(code=aiocoap.INTERNAL_SERVER_ERROR)
+                response = aiocoap.Message(code=aiocoap.INTERNAL_SERVER_ERROR, mtype=aiocoap.Type.ACK)
 
         response.mid = coap_request.mid
         response.token = coap_request.token
