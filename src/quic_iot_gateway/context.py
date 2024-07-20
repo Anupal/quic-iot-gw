@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Tuple
 
 import aiocoap
@@ -7,9 +8,8 @@ import asyncio_dgram
 import aiomqtt
 
 import quic_iot_gateway.mqtt_sn as mqtt_sn
-from quic_iot_gateway.utils import setup_logger
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class ClientContext:

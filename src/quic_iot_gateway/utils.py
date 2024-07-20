@@ -2,13 +2,13 @@ import logging
 import colorlog
 
 
-def setup_logger(name):
-    logger = logging.getLogger(name)
+def setup_logger(logging_level=logging.INFO):
+    logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
     # Create a handler
     handler = logging.StreamHandler()
-    handler.setLevel(logging.INFO)
+    handler.setLevel(logging_level)
 
     # Define the log colors
     log_colors = {

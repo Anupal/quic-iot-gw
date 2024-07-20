@@ -1,3 +1,5 @@
+import logging
+
 import asyncio
 import argparse
 import os
@@ -5,6 +7,9 @@ import configparser
 from quic_iot_gateway.transport import init_quic_server
 from quic_iot_gateway.context import CoAPServerContext, MQTTSNGWServerContext
 from quic_iot_gateway.gateway import iot_gateway_server_protocol_factory
+from quic_iot_gateway.utils import setup_logger
+
+logger = logging.getLogger(__name__)
 
 
 async def asyncio_main(quic_server_host, quic_server_port, cert_file, key_file, disable_cert_verification, mqtt_broker_host, mqtt_broker_port):
@@ -33,13 +38,18 @@ def main():
     parser.add_argument('--disable_cert_verification', action='store_true', help='Disable certificate verification')
     parser.add_argument('--mqtt_broker_host', type=str, help='MQTT-SN gateway host')
     parser.add_argument('--mqtt_broker_port', type=int, help='MQTT-SN gateway port')
+    parser.add_argument('--log-level', default='WARNING',
+                        help='Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)')
 
     args = parser.parse_args()
+
+    log_level = getattr(logging, args.log_level.upper(), logging.WARNING)
+    setup_logger(log_level)
 
     config = configparser.ConfigParser()
     if args.config:
         if not os.path.exists(args.config):
-            print(f"Configuration file {args.config} does not exist.")
+            logger.error(f"Configuration file {args.config} does not exist.")
             return
         config.read(args.config)
 
@@ -54,10 +64,10 @@ def main():
     # Check if cert_file and key_file exist
     if not disable_cert_verification:
         if not cert_file or not os.path.exists(cert_file):
-            print(f"Certificate file {cert_file} does not exist.")
+            logger.error(f"Certificate file {cert_file} does not exist.")
             return
         if not key_file or not os.path.exists(key_file):
-            print(f"Key file {key_file} does not exist.")
+            logger.error(f"Key file {key_file} does not exist.")
             return
 
     asyncio.run(asyncio_main(quic_server_host, quic_server_port, cert_file, key_file, disable_cert_verification, mqtt_broker_host, mqtt_broker_port))

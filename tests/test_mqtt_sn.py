@@ -1,3 +1,4 @@
+import logging
 import random
 import socket
 import string
@@ -7,7 +8,8 @@ import multiprocessing as mp
 import quic_iot_gateway.mqtt_sn as mqtt_sn
 from quic_iot_gateway.utils import setup_logger
 
-logger = setup_logger(__name__)
+setup_logger(logging_level=logging.WARNING)
+logger = logging.getLogger(__name__)
 
 GW_HOST, GW_PORT = "localhost", 1883
 NUM_CLIENTS = 500

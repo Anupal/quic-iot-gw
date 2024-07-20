@@ -1,3 +1,4 @@
+import logging
 import string
 import random
 import time
@@ -9,7 +10,8 @@ import multiprocessing as mp
 
 from quic_iot_gateway.utils import setup_logger
 
-logger = setup_logger(__name__)
+setup_logger(logging_level=logging.WARNING)
+logger = logging.getLogger(__name__)
 
 BACKEND_URI = 'coap://localhost:5684/hello'
 PROXY_URI = 'coap://localhost:5683/proxy'

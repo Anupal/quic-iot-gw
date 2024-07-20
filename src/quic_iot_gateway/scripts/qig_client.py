@@ -1,9 +1,14 @@
+import logging
+
 import asyncio
 import argparse
 import os
 import configparser
 from quic_iot_gateway.gateway import IoTGatewayClient
 from quic_iot_gateway.context import CoAPClientContext, MQTTSNGWClientContext
+from quic_iot_gateway.utils import setup_logger
+
+logger = logging.getLogger(__name__)
 
 
 async def asyncio_main(quic_server_host, quic_server_port, disable_cert_verification, coap_host, coap_port, mqtt_sn_host, mqtt_sn_port):
@@ -27,13 +32,18 @@ def main():
     parser.add_argument('--coap_port', type=int, help='CoAP port')
     parser.add_argument('--mqtt_sn_host', type=str, help='MQTT-SN gateway host')
     parser.add_argument('--mqtt_sn_port', type=int, help='MQTT-SN gateway port')
+    parser.add_argument('--log-level', default='WARNING',
+                        help='Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)')
 
     args = parser.parse_args()
+
+    log_level = getattr(logging, args.log_level.upper(), logging.WARNING)
+    setup_logger(log_level)
 
     config = configparser.ConfigParser()
     if args.config:
         if not os.path.exists(args.config):
-            print(f"Configuration file {args.config} does not exist.")
+            logger.error(f"Configuration file {args.config} does not exist.")
             return
         config.read(args.config)
 

@@ -1,9 +1,10 @@
+import logging
+
 import asyncio
 
 import quic_iot_gateway.transport as transport
-from quic_iot_gateway.utils import setup_logger
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class IoTGatewayClient(transport.QUICGatewayClient):

@@ -2,6 +2,7 @@
 Base QUIC Server and Client class to handle rx-tx queues.
 """
 
+import logging
 from typing import Tuple
 import random
 
@@ -11,9 +12,7 @@ from aioquic.asyncio.protocol import QuicConnectionProtocol
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import HandshakeCompleted, StreamDataReceived, ConnectionTerminated, PingAcknowledged
 
-from quic_iot_gateway.utils import setup_logger
-
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class QUICGatewayClient:
