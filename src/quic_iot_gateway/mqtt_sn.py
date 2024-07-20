@@ -51,8 +51,15 @@ class MQTTSNPacketDecoder:
             raise ValueError("Message too short")
 
         length = message[0]
-        message_type = message[1]
-        message = message[2:]
+
+        # length field is 3 octet long
+        if length == 0x01:
+            length = int.from_bytes(message[1:3], "big")
+            message_type = message[3]
+            message = message[4:]
+        else:
+            message_type = message[1]
+            message = message[2:]
 
         if message_type == MessageType.CONNECT:
             return self._decode_connect(message)
@@ -214,8 +221,12 @@ class MQTTSNPacketEncoder:
         encoded_flags = self._encode_flags(flags)
         payload = struct.pack("!BBHH", message_type, encoded_flags, topic_id, msg_id)
         payload += data.encode('utf-8')
-        length = 1 + len(payload)  # Length byte + payload
-        return struct.pack("!B", length) + payload
+        if len(data) > 240:
+            length = 3 + len(payload)  # Length byte + payload
+            return struct.pack("!BH", 0x01, length) + payload
+        else:
+            length = 1 + len(payload)  # Length byte + payload
+            return struct.pack("!B", length) + payload
 
     def _encode_puback(self, topic_id, msg_id, return_code):
         length = 7
