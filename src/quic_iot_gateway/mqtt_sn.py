@@ -66,6 +66,8 @@ class MQTTSNPacketDecoder:
             return self._decode_register(message)
         elif message_type == MessageType.REGACK:
             return self._decode_regack(message)
+        elif message_type == MessageType.DISCONNECT:
+            return {"type": MessageType.DISCONNECT}
         else:
             raise ValueError("Unknown/Unsupported message type")
 
@@ -167,6 +169,8 @@ class MQTTSNPacketEncoder:
             return self._encode_register(**kwargs)
         elif message_type == MessageType.REGACK:
             return self._encode_regack(**kwargs)
+        elif message_type == MessageType.DISCONNECT:
+            return self._encode_disconnect()
         else:
             return None
 

@@ -155,6 +155,15 @@ class MQTTSNGWClientContext(ClientContext):
                     type=mqtt_sn.MessageType.DISCONNECT
                 ), client_address))
 
+        elif decoded_message["type"] == mqtt_sn.MessageType.DISCONNECT:
+            if client_address in self.mqtt_sn_clients:
+                await self.write_queue.put((mqtt_sn.encoder.encode(
+                    type=mqtt_sn.MessageType.DISCONNECT
+                ), client_address))
+                self.mqtt_sn_clients.pop(client_address)
+                stream_id = self._device_stream_map.pop(client_address)
+                self._stream_device_map.pop(stream_id)
+
     async def connect_handler(self, message, remote_addr):
         logger.info(f"Save MQTT-SN client '{remote_addr}' with client id' {message['client_id']}'.")
         self.mqtt_sn_clients[remote_addr] = {
