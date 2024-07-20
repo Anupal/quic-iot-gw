@@ -171,11 +171,17 @@ class MQTTSNPacketEncoder:
             return None
 
     def _encode_connect(self, flags, protocol_id, duration, client_id):
-        length = 6 + len(client_id)
-        message_type = MessageType.CONNECT
-        payload = struct.pack("!BBHB", flags, protocol_id, duration, message_type)
-        payload += client_id.encode('utf-8')
-        return struct.pack("!B", length) + payload
+        encoded_flags = self._encode_flags(flags)
+        client_id_bytes = client_id.encode('utf-8')
+        payload = struct.pack(
+            "!BBBH",  # Format: length byte, message type byte, flags byte, protocol ID byte, duration (2 bytes)
+            MessageType.CONNECT,  # Message Type
+            encoded_flags,  # Flags
+            protocol_id,  # Protocol ID
+            duration  # Duration
+        )
+        payload += client_id_bytes
+        return struct.pack("!B", len(payload)) + payload
 
     def _encode_connack(self, return_code):
         length = 3
@@ -183,12 +189,28 @@ class MQTTSNPacketEncoder:
         payload = struct.pack("!BB", message_type, return_code)
         return struct.pack("!B", length) + payload
 
+    def _encode_flags(self, values):
+        flags = 0
+        if values.get("dup", False):
+            flags |= 0b10000000
+        if values.get("qos", 0) in [1, 2]:
+            flags |= (values["qos"] << 5)
+        if values.get("retain", False):
+            flags |= 0b00010000
+        if values.get("will", False):
+            flags |= 0b00001000
+        if values.get("clean_session", False):
+            flags |= 0b00000100
+        if values.get("topic_type", 0) in [0, 1, 2, 3]:
+            flags |= values["topic_type"]
+        return flags
+
     def _encode_publish(self, flags, topic_id, msg_id, data):
-        length = 7 + len(data)
         message_type = MessageType.PUBLISH
-        payload = struct.pack("!BH", message_type, flags)
-        payload += struct.pack("!HH", topic_id, msg_id)
+        encoded_flags = self._encode_flags(flags)
+        payload = struct.pack("!BBHH", message_type, encoded_flags, topic_id, msg_id)
         payload += data.encode('utf-8')
+        length = 1 + len(payload)  # Length byte + payload
         return struct.pack("!B", length) + payload
 
     def _encode_puback(self, topic_id, msg_id, return_code):
@@ -207,7 +229,7 @@ class MQTTSNPacketEncoder:
         return struct.pack("!B", length) + payload
 
     def _encode_regack(self, topic_id, msg_id, return_code):
-        length = 8
+        length = 7
         message_type = MessageType.REGACK
         payload = struct.pack("!BH", message_type, topic_id)
         payload += struct.pack("!HB", msg_id, return_code)
