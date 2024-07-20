@@ -160,7 +160,7 @@ class MQTTSNGWClientContext(ClientContext):
                 await self.write_queue.put((mqtt_sn.encoder.encode(
                     type=mqtt_sn.MessageType.DISCONNECT
                 ), client_address))
-                self.mqtt_sn_clients.pop(client_address)
+                # Remove stream as it won't be used again
                 stream_id = self._device_stream_map.pop(client_address)
                 self._stream_device_map.pop(stream_id)
 
@@ -236,7 +236,6 @@ class MQTTSNGWClientContext(ClientContext):
         except Exception as e:
             logger.error(f"Unable to handle MQTT response from server-proxy: {repr(data)}")
             logger.exception(e)
-
 
     def is_valid(self, data):
         try:
