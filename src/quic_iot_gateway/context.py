@@ -442,26 +442,31 @@ class MQTTSNGWServerContext(ServerContext):
                         qos=mqtt_message_dict["qos"],
                         retain=mqtt_message_dict["retain"],
                     )
-                    logger.info("MQTT PUBLISH successful, sending PUBACK back to client-proxy.")
-                    mqtt_puback_dict = {
-                        "type": "PUBACK",
-                        "topic_name": mqtt_message_dict["topic_name"],
-                        "return_code": mqtt_sn.ReturnCode.ACCEPTED,
-                        "msg_id": mqtt_message_dict["msg_id"],
-                        "protocol": "MQTT-SN",
-                    }
-                    return json.dumps(mqtt_puback_dict).encode()
+                    logger.info("MQTT PUBLISH successful")
+
+                    if mqtt_message_dict["qos"] in (1, 2):
+                        logger.info("QoS is 1 or 2, sending PUBACK back to client-proxy.")
+                        mqtt_puback_dict = {
+                            "type": "PUBACK",
+                            "topic_name": mqtt_message_dict["topic_name"],
+                            "return_code": mqtt_sn.ReturnCode.ACCEPTED,
+                            "msg_id": mqtt_message_dict["msg_id"],
+                            "protocol": "MQTT-SN",
+                        }
+                        return json.dumps(mqtt_puback_dict).encode()
                 except Exception as e:
                     logger.error(f"Failed to publish to broker")
                     logger.exception(e)
-                    mqtt_puback_dict = {
-                        "type": "PUBACK",
-                        "topic_name": mqtt_message_dict["topic_name"],
-                        "return_code": mqtt_sn.ReturnCode.CONGESTION,
-                        "msg_id": mqtt_message_dict["msg_id"],
-                        "protocol": "MQTT-SN",
-                    }
-                    return json.dumps(mqtt_puback_dict).encode()
+                    if mqtt_message_dict["qos"] in (1, 2):
+                        logger.info("QoS is 1 or 2, sending PUBACK back to client-proxy.")
+                        mqtt_puback_dict = {
+                            "type": "PUBACK",
+                            "topic_name": mqtt_message_dict["topic_name"],
+                            "return_code": mqtt_sn.ReturnCode.CONGESTION,
+                            "msg_id": mqtt_message_dict["msg_id"],
+                            "protocol": "MQTT-SN",
+                        }
+                        return json.dumps(mqtt_puback_dict).encode()
             if mqtt_message_dict["type"] == "SUBSCRIBE":
                 logger.info(f"Subscribing to topic '{mqtt_message_dict['topic_name']}' broker")
                 try:
