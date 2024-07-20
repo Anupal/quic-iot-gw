@@ -243,6 +243,9 @@ class RegisteredTopics:
     def topic_id_to_name(self, client_id, topic_id):
         return self.clients_rev.get(client_id, {}).get(topic_id, None)
 
+    def topic_name_to_id(self, client_id, topic_name):
+        return self.clients.get(client_id, {}).get(topic_name, None)
+
     def _next_topic_id(self, client_id):
         topic_id = self._topic_id_tracker.get(client_id, 1)
         self._topic_id_tracker[client_id] = topic_id + 1

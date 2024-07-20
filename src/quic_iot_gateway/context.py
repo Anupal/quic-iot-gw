@@ -143,6 +143,8 @@ class MQTTSNGWClientContext(ClientContext):
                         "data": decoded_message["data"],
                         "qos": decoded_message["flags"]["qos"],
                         "retain": decoded_message["flags"]["retain"],
+                        "msg_id": decoded_message["msg_id"],
+                        "protocol": "MQTT-SN",
                     }
                     mqtt_publish_json = json.dumps(mqtt_publish_dict).encode()
                     return mqtt_publish_json, stream_id
@@ -183,14 +185,6 @@ class MQTTSNGWClientContext(ClientContext):
         client_id = self.mqtt_sn_clients[client_address]["client_id"]
         topic_name = self.registered_topics.topic_id_to_name(client_id, topic_id)
         if topic_name:
-            puback_message = mqtt_sn.encoder.encode(
-                type=mqtt_sn.MessageType.PUBACK,
-                topic_id=topic_id,
-                msg_id=message["msg_id"],
-                return_code=mqtt_sn.ReturnCode.ACCEPTED
-            )
-            logger.info(f"Sending PUBACK message: {puback_message} to {client_address}")
-            await self.write_queue.put((puback_message, client_address))
             return True
         else:
             logger.warning(f"No associated topic id '{topic_id}' found for MQTT-SN client '{client_id}'")
@@ -206,10 +200,46 @@ class MQTTSNGWClientContext(ClientContext):
         return False
 
     async def handle_write_message(self, data, stream_id):
-        ...
+        logger.info(f"Handling MQTT response received on stream id {stream_id}")
+        try:
+            payload = json.loads(data)
+            if payload["type"] == "PUBACK":
+                if stream_id not in self._stream_device_map:
+                    logger.warning(f"No device associated stream id '{stream_id}' found for MQTT-SN.")
+                    return
+
+                client_address = self._stream_device_map[stream_id]
+                client_id = self.mqtt_sn_clients[client_address]["client_id"]
+                topic_id = self.registered_topics.topic_name_to_id(client_id, payload["topic_name"])
+
+                if not topic_id:
+                    logger.warning(f"No associated topic id for topic name '{payload['topic_name']}' found for MQTT-SN.")
+                    return
+
+                puback_message = mqtt_sn.encoder.encode(
+                    type=mqtt_sn.MessageType.PUBACK,
+                    topic_id=topic_id,
+                    msg_id=payload["msg_id"],
+                    return_code=payload["return_code"]
+                )
+                logger.info(f"Sending PUBACK message: {puback_message} to {client_address}")
+                await self.write_queue.put((puback_message, client_address))
+        except Exception as e:
+            logger.error(f"Unable to handle MQTT response from server-proxy: {repr(data)}")
+            logger.exception(e)
+
 
     def is_valid(self, data):
-        return True if mqtt_sn.decoder.decode(data) else False
+        try:
+            mqtt_sn.decoder.decode(data)
+            return True
+        except Exception:
+            ...
+        try:
+            payload = json.loads(data.decode())
+            return payload["protocol"] == "MQTT-SN"
+        except Exception:
+            return False
 
     def reset(self):
         logger.info("Resetting MQTT-SN context - cleared stream ids")
@@ -387,6 +417,7 @@ class MQTTSNGWServerContext(ServerContext):
             "data": str(mqtt_message.paylaod),
             "qos": mqtt_message.qos,
             "retain": mqtt_message.retain,
+            "protocol": "MQTT-SN",
         }
         return json.dumps(mqtt_publish_dict).encode()
 
@@ -402,9 +433,26 @@ class MQTTSNGWServerContext(ServerContext):
                         qos=mqtt_message_dict["qos"],
                         retain=mqtt_message_dict["retain"],
                     )
+                    logger.info("MQTT PUBLISH successful, sending PUBACK back to client-proxy.")
+                    mqtt_puback_dict = {
+                        "type": "PUBACK",
+                        "topic_name": mqtt_message_dict["topic_name"],
+                        "return_code": mqtt_sn.ReturnCode.ACCEPTED,
+                        "msg_id": mqtt_message_dict["msg_id"],
+                        "protocol": "MQTT-SN",
+                    }
+                    return json.dumps(mqtt_puback_dict).encode()
                 except Exception as e:
                     logger.error(f"Failed to publish to broker")
                     logger.exception(e)
+                    mqtt_puback_dict = {
+                        "type": "PUBACK",
+                        "topic_name": mqtt_message_dict["topic_name"],
+                        "return_code": mqtt_sn.ReturnCode.CONGESTION,
+                        "msg_id": mqtt_message_dict["msg_id"],
+                        "protocol": "MQTT-SN",
+                    }
+                    return json.dumps(mqtt_puback_dict).encode()
             if mqtt_message_dict["type"] == "SUBSCRIBE":
                 logger.info(f"Subscribing to topic '{mqtt_message_dict['topic_name']}' broker")
                 try:
@@ -412,12 +460,13 @@ class MQTTSNGWServerContext(ServerContext):
                 except Exception as e:
                     logger.error(f"Failed to subscribe to broker with topic '{mqtt_message_dict['topic_name']}'")
                     logger.exception(e)
+                # todo: handle return for subscribe
         else:
             logger.error(f"Cannot forward MQTT message: {data}. Not connected to MQTT broker.")
 
     def is_valid(self, data) -> bool:
         try:
-            json.loads(data.decode())
-            return True
+            payload = json.loads(data.decode())
+            return payload["protocol"] == "MQTT-SN"
         except:
             return False

@@ -76,8 +76,11 @@ class IoTGatewayClient(transport.QUICGatewayClient):
                     logger.info(f"RX Dispatcher - {stream_id}: {repr(data)}")
                     if self.coap_context.is_valid(data):
                         await self.coap_context.handle_write_message(data, stream_id)
+                    if self.mqtt_sn_context.is_valid(data):
+                        await self.mqtt_sn_context.handle_write_message(data, stream_id)
+
                 except Exception as e:
-                    logger.error("RX Dispatcher - Error occurred when handling CoAP message...")
+                    logger.error("RX Dispatcher - Error occurred when handling message received from server-proxy...")
                     logger.exception(e)
             else:
                 logger.error("RX Dispatcher - no quic client available, retrying after 5 seconds.")
@@ -103,7 +106,8 @@ class IoTGatewayServerProtocolTemplate(transport.QUICGatewayServerProtocol):
                     await self.send_data(stream_id, response)
 
                 if self.mqtt_sn_context.is_valid(data):
-                    await self.mqtt_sn_context.handle_write_message(data)
+                    response = await self.mqtt_sn_context.handle_write_message(data)
+                    await self.send_data(stream_id, response)
 
             except Exception as e:
                 logger.error("RX Dispatcher - error in received data...")
