@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+setup.py
+quic_iot_gateway.egg-info/PKG-INFO
+quic_iot_gateway.egg-info/SOURCES.txt
+quic_iot_gateway.egg-info/dependency_links.txt
+quic_iot_gateway.egg-info/entry_points.txt
+quic_iot_gateway.egg-info/requires.txt
+quic_iot_gateway.egg-info/top_level.txt

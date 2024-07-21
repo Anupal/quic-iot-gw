@@ -1,0 +1,122 @@
+networks:
+  cloud-provider:
+    name: cloud-provider
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.40.0/24
+  internet:
+    name: internet
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.45.0/24
+  iot:
+    name: iot
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.50.0/24
+
+services:
+  coap-server:
+    image: qig
+    container_name: coap-server
+    command: >
+      bash -c "coap_server \
+      --message_size_range 50,500 \
+      --host 0.0.0.0 \
+      --port 5684 \
+      --num-clients 500 \
+      --log-level WARNING"
+    restart: always
+    networks:
+      - cloud-provider
+
+  mqtt-broker:
+    image: eclipse-mosquitto:latest
+    container_name: mqtt-broker
+    volumes:
+      - ./extras/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    restart: always
+    networks:
+      - cloud-provider
+
+  qig-server:
+    image: qig
+    container_name: qig-server
+    command: >
+      bash -c "qig_server \
+      --quic_server_host 0.0.0.0 \
+      --quic_server_port 4433 \
+      --cert_file tests/certs/cert.pem \
+      --key_file tests/certs/key.pem \
+      --mqtt_broker_host mqtt-broker \
+      --mqtt_broker_port 1883 \
+      --log-level WARNING"
+
+    restart: always
+    networks:
+      - cloud-provider
+      - internet
+
+  qig-client:
+    image: qig
+    container_name: qig-client
+    command: >
+      bash -c "qig_client \
+      --quic_server_host qig-server \
+      --quic_server_port 4433 \
+      --coap_host 0.0.0.0 \
+      --coap_port 5683 \
+      --mqtt_sn_host 0.0.0.0 \
+      --mqtt_sn_port 1883 \
+      --log-level WARNING"
+    restart: always
+    networks:
+      - internet
+      - iot
+
+  scale-coap-clients:
+    image: qig
+    container_name: scale-coap-clients
+    command: >
+      bash -c "coap_client \
+      --message_size_range 50,500 \
+      --coap-server-host coap-server \
+      --coap-server-port 5684 \
+      --coap-proxy-host qig-client \
+      --coap-proxy-port 5683 \
+      --num-clients 50 \
+      --num-requests 10 \
+      --starting-port 30001 \
+      --log-level WARNING"
+    restart: always
+    networks:
+      - iot
+
+  scale-mqtt-sn-clients:
+    image: qig
+    container_name: scale-mqtt-sn-clients
+    command: >
+      bash -c "mqtt_sn_client \
+      --message_size_range 50,500 \
+      --mqtt-sn-gw-host qig-client \
+      --mqtt-sn-gw-port 1883 \
+      --num-clients 50 \
+      --num-requests 10 \
+      --num-topics 10 \
+      --starting-port 31001 \
+      --log-level WARNING"
+    restart: always
+    networks:
+      - iot
+
+  mqtt-sn-client:
+    build:
+      context: ./extras
+      dockerfile: mqtt-sn-client.Dockerfile
+    container_name: mqtt-sn-client
+    command: tail -f /dev/null
+    networks:
+      - iot

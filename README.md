@@ -20,3 +20,19 @@ coap-server --- server-proxy ==QUIC== client-proxy --- coap-client
 
 ## MQTT-SN proxy
 This is currently under work.
+
+### Topology
+
+coap-server        qig-server        qig-client        coap-client 
+MQTT broker                                            mqtt-sn-client
+
+### Docker
+
+```bash
+docker compose -f docker-compose.simulation.yaml up -d
+docker compose -f docker-compose.simulation.yaml down
+```
+
+```bash
+docker build -t qig -f extras/qig.Dockerfile .
+```
