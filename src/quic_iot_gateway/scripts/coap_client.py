@@ -69,26 +69,26 @@ async def coap_client(index, backend_uri, proxy_uri, num_requests, message_size_
         get_post = random.randint(0, 1)
         time.sleep(random.random() + random.random())
         if get_post == 0:
-            logger.info(f"Sending GET request through proxy {proxy_uri} to {resource_uri}")
+            logger.debug(f"Sending GET request through proxy {proxy_uri} to {resource_uri}")
             request = aiocoap.Message(code=aiocoap.GET, uri=proxy_uri)
             request.opt.proxy_uri = resource_uri
             try:
                 response = await protocol.request(request).response
-                logger.info(
+                logger.debug(
                     f"Received GET response: code='{response.code}' payload='{response.payload.decode()}'")
                 if response.code == aiocoap.CONTENT and f"Hello, {index} " in response.payload.decode():
                     success += 1
             except Exception as e:
                 logger.error("Error sending GET request", exc_info=e)
         else:
-            logger.info(f"Sending POST request through proxy {proxy_uri} to {resource_uri}")
+            logger.debug(f"Sending POST request through proxy {proxy_uri} to {resource_uri}")
             request = aiocoap.Message(code=aiocoap.POST, uri=proxy_uri,
                                       payload=generate_bytes(random.randint(*message_size_range))
                                       )
             request.opt.proxy_uri = resource_uri
             try:
                 response = await protocol.request(request).response
-                logger.info(
+                logger.debug(
                     f"Received POST response: code='{response.code}' payload='{response.payload.decode()}'")
                 if response.code == aiocoap.CHANGED and f"Hello, {index} " in response.payload.decode():
                     success += 1
@@ -115,16 +115,16 @@ def main():
             for i in range(1, num_clients + 1)
         ]
 
-        logger.warning("Sleeping for 5 seconds...")
+        logger.info("Sleeping for 5 seconds...")
         time.sleep(5)
-        logger.warning(f"Starting CoAP Clients...")
+        logger.info(f"Starting CoAP Clients...")
         for client in p_coap_clients:
             client.start()
 
         while results.qsize() != num_clients: ...
 
         table = []
-        logger.warning("Retrieving results:")
+        logger.info("Retrieving results:")
         for i in range(num_clients):
             table.append(results.get())
 
@@ -135,4 +135,4 @@ def main():
         for index, result in table:
             logger.info(f"| {index:<5} | {result:<5} |")
 
-        logger.warning(f"Result: {sum([res[1] for res in table]) / num_clients:.2f}")
+        logger.info(f"Result: {sum([res[1] for res in table]) / num_clients:.2f}")

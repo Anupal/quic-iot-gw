@@ -31,11 +31,11 @@ class QUICGatewayClient:
 
             # add received data to read queue (reader task)
             elif isinstance(event, StreamDataReceived):
-                logger.info(f"Received from server-proxy, payload: '{event.data}' on stream '{event.stream_id}'")
+                logger.debug(f"Received from server-proxy, payload: '{event.data}' on stream '{event.stream_id}'")
                 asyncio.ensure_future(self.quic_client_read_queue.put((event.stream_id, event.data)))
 
             elif isinstance(event, ConnectionTerminated):
-                logger.info("QUIC connection terminated.")
+                logger.warning("QUIC connection terminated.")
 
             elif isinstance(event, PingAcknowledged):
                 if event.uid in self._keep_alive_set:
@@ -69,7 +69,7 @@ class QUICGatewayClient:
         async def quic_writer(self):
             while True:
                 stream_id, payload = await self.quic_client_write_queue.get()
-                logger.info(f"Sending to server-proxy, payload: '{payload}' over stream '{stream_id}'")
+                logger.debug(f"Sending to server-proxy, payload: '{payload}' over stream '{stream_id}'")
                 self._quic.send_stream_data(stream_id, payload)
                 self.transmit()
 
@@ -108,7 +108,7 @@ class QUICGatewayClient:
                     await quic_client.wait_closed()
 
                     # restart if quic_client gets disconnected
-                    logger.info("QUIC client disconnected, retrying after 1 second")
+                    logger.error("QUIC client disconnected, retrying after 1 second")
                     self.cancel_io_tasks()
                     self.quic_client = None
                     await asyncio.sleep(1)
@@ -137,7 +137,7 @@ class QUICGatewayClient:
         while True:
             if self.quic_client:
                 stream_id, payload = self.quic_client._quic.get_next_available_stream_id(), b"DUMMY DATA"
-                logger.info(f"TX Dispatcher - {stream_id}: {payload.decode()}")
+                logger.debug(f"TX Dispatcher - {stream_id}: {payload.decode()}")
                 await self.quic_client.send_data(stream_id, payload)
                 await asyncio.sleep(5)
             else:
@@ -153,7 +153,7 @@ class QUICGatewayClient:
         while True:
             if self.quic_client:
                 stream_id, data = await self.quic_client.get_data()
-                logger.info(f"RX Dispatcher - {stream_id}: {data.decode()}")
+                logger.debug(f"RX Dispatcher - {stream_id}: {data.decode()}")
             else:
                 logger.error("RX Dispatcher - no quic client available, retrying after 5 seconds.")
                 await asyncio.sleep(5)
@@ -174,7 +174,7 @@ class QUICGatewayServerProtocol(QuicConnectionProtocol):
             asyncio.ensure_future(self.init_tasks())
 
         elif isinstance(event, StreamDataReceived):
-            logger.info(f"Received from client-proxy, payload: '{repr(event.data)}' on stream '{event.stream_id}'")
+            logger.debug(f"Received from client-proxy, payload: '{repr(event.data)}' on stream '{event.stream_id}'")
             asyncio.ensure_future(self.quic_server_read_queue.put((event.stream_id, event.data)))
 
     async def init_tasks(self):
@@ -193,7 +193,7 @@ class QUICGatewayServerProtocol(QuicConnectionProtocol):
     async def quic_writer(self):
         while True:
             stream_id, payload = await self.quic_server_write_queue.get()
-            logger.info(f"Sending to client-proxy, payload: '{repr(payload)}' over stream '{stream_id}'")
+            logger.debug(f"Sending to client-proxy, payload: '{repr(payload)}' over stream '{stream_id}'")
             self._quic.send_stream_data(stream_id, payload)
             self.transmit()
 
@@ -213,7 +213,7 @@ class QUICGatewayServerProtocol(QuicConnectionProtocol):
         while True:
             try:
                 stream_id, data = await self.get_data()
-                logger.info(f"RX Dispatcher - {stream_id}: {repr(data.decode)}")
+                logger.debug(f"RX Dispatcher - {stream_id}: {repr(data.decode)}")
                 await self.send_data(stream_id, f"{data.decode()} BACK".encode())
             except Exception as e:
                 logger.error("RX Dispatcher - error in received data...")
