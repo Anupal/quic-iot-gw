@@ -179,7 +179,7 @@ class MQTTSNGWClientContext(ClientContext):
     async def register_handler(self, message, client_id, remote_addr):
         topic_name = message["topic_name"]
         topic_id = self.registered_topics.add_topic(client_id, topic_name)
-        logger.info(f"Registered MQTT-SN client '{remote_addr}' -> '{client_id}' with topic name '{topic_name}' -> id '{topic_id}'")
+        logger.debug(f"Registered MQTT-SN client '{remote_addr}' -> '{client_id}' with topic name '{topic_name}' -> id '{topic_id}'")
         regack_message = mqtt_sn.encoder.encode(
             type=mqtt_sn.MessageType.REGACK,
             topic_id=topic_id,
@@ -378,6 +378,8 @@ class CoAPServerContext(ServerContext):
             except Exception as e:
                 logger.error(f"Failed to get response from server: {e}")
                 response = aiocoap.Message(code=aiocoap.INTERNAL_SERVER_ERROR, mtype=aiocoap.Type.ACK)
+
+            await protocol.shutdown()
 
         response.mid = coap_request.mid
         response.token = coap_request.token
