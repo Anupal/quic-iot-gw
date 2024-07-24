@@ -118,7 +118,7 @@ def start_mqtt_sn_client(index, mqtt_sn_gw_host, mqtt_sn_gw_port, num_requests, 
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     client.bind(("0.0.0.0", starting_port + index))
 
-    response = send_request(client, mqtt_sn_gw_host, mqtt_sn_gw_port, connect_message(f"client{1}", 0))
+    response = send_request(client, mqtt_sn_gw_host, mqtt_sn_gw_port, connect_message(f"client{index}", 0))
     if not response or response["return_code"] != mqtt_sn.ReturnCode.ACCEPTED:
         logger.error(f"Client{index} failed to connect")
         return
@@ -195,6 +195,6 @@ def main():
 
         table.sort(key=lambda x: x[0])
         for index, result in table:
-            logger.info(f"| {index:<5} | {result:<5} |")
+            logger.warning(f"| {index:<5} | {result:<5} |")
 
         logger.info(f"Result: {sum([res[1] for res in table]) / num_clients:.2f}")

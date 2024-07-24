@@ -133,6 +133,6 @@ def main():
 
         table.sort(key=lambda x: x[0])
         for index, result in table:
-            logger.info(f"| {index:<5} | {result:<5} |")
+            logger.debug(f"| {index:<5} | {result:<5} |")
 
         logger.info(f"Result: {sum([res[1] for res in table]) / num_clients:.2f}")
