@@ -44,23 +44,23 @@ class CoAPResource(resource.Resource):
         self.message_size_range = message_size_range
 
     async def render_get(self, request):
-        logger.info(f"Received GET request: {request}")
+        logger.debug(f"Received GET request: {request}")
         payload = f"Hello, {self.index} ".encode() + self._generate_bytes(random.randint(*self.message_size_range))
         response = aiocoap.Message(
             payload=payload,
             code=aiocoap.CONTENT
         )
-        logger.info(f"Sending response: {repr(payload)} | {response}")
+        logger.debug(f"Sending response: {repr(payload)} | {response}")
         return response
 
     async def render_post(self, request):
-        logger.info(f"Received POST request: {request}")
+        logger.debug(f"Received POST request: {request}")
         payload = f"Hello, {self.index} ".encode() + request.payload
         response = aiocoap.Message(
             payload=payload,
             code=aiocoap.CHANGED
         )
-        logger.info(f"Sending response: {repr(payload)} | {response}")
+        logger.debug(f"Sending response: {repr(payload)} | {response}")
         return response
 
     def _generate_bytes(self, n):
@@ -75,7 +75,7 @@ async def coap_server(host, port, num_clients, message_size_range):
     for i in range(1, num_clients + 1):
         root.add_resource([f"hello{i}"], CoAPResource(i, message_size_range))
 
-    logger.info(f"root={root.get_resources_as_linkheader()}")
+    logger.debug(f"root={root.get_resources_as_linkheader()}")
 
     logger.info(f"Starting CoAP Backend Server ({host}:{port})")
     await aiocoap.Context.create_server_context(root, bind=(host, port))

@@ -38,7 +38,7 @@ class IoTGatewayClient(transport.QUICGatewayClient):
                     # If there is data to be forwarded
                     if ret:
                         payload, stream_id = ret
-                        logger.info(f"TX Dispatcher - {stream_id}: {repr(payload)}")
+                        logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
                         await self.quic_client.send_data(stream_id, payload)
 
                 except Exception as e:
@@ -58,7 +58,7 @@ class IoTGatewayClient(transport.QUICGatewayClient):
                         self.quic_client._quic.get_next_available_stream_id
                     )
 
-                    logger.info(f"TX Dispatcher - {stream_id}: {repr(payload)}")
+                    logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
                     await self.quic_client.send_data(stream_id, payload)
 
                 except Exception as e:
@@ -74,7 +74,7 @@ class IoTGatewayClient(transport.QUICGatewayClient):
             if self.quic_client:
                 try:
                     stream_id, data = await self.quic_client.get_data()
-                    logger.info(f"RX Dispatcher - {stream_id}: {repr(data)}")
+                    logger.debug(f"RX Dispatcher - {stream_id}: {repr(data)}")
                     if self.coap_context.is_valid(data):
                         await self.coap_context.handle_write_message(data, stream_id)
                     if self.mqtt_sn_context.is_valid(data):
@@ -100,7 +100,7 @@ class IoTGatewayServerProtocolTemplate(transport.QUICGatewayServerProtocol):
         while True:
             try:
                 stream_id, data = await self.get_data()
-                logger.info(f"RX Dispatcher - {stream_id}: {repr(data)}")
+                logger.debug(f"RX Dispatcher - {stream_id}: {repr(data)}")
 
                 if self.coap_context.is_valid(data):
                     response = await self.coap_context.handle_write_message(data)

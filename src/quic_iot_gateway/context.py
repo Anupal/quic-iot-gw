@@ -81,7 +81,7 @@ class MQTTSNGWClientContext(ClientContext):
         logger.info("MQTT-SN-GW Datagram reader started")
         while True:
             data, client_addr = await udp_stream.recv()
-            logger.info(
+            logger.debug(
                 f"MQTT-SN-GW - Received datagram length = {len(data)}, data = {data}, source = {client_addr}"
             )
             await self.read_queue.put((data, client_addr))
@@ -90,7 +90,7 @@ class MQTTSNGWClientContext(ClientContext):
         logger.info("MQTT-SN-GW Datagram writer started")
         while True:
             data, client_addr = await self.write_queue.get()
-            logger.info(
+            logger.debug(
                 f"MQTT-SN-GW - Sending datagram length = {len(data)}, data = {data}, destination = {client_addr}"
             )
             await udp_stream.send(data, client_addr)
@@ -104,7 +104,7 @@ class MQTTSNGWClientContext(ClientContext):
             logger.warning(f"Unable to decode MQTT-SN-GW message: {data}, error = {e}")
             return
 
-        logger.info(f"Decoded MQTT-SN message: {decoded_message}")
+        logger.debug(f"Decoded MQTT-SN message: {decoded_message}")
 
         if decoded_message["type"] == mqtt_sn.MessageType.CONNECT:
             asyncio.ensure_future(self.connect_handler(decoded_message, client_address))
@@ -173,7 +173,7 @@ class MQTTSNGWClientContext(ClientContext):
             type=mqtt_sn.MessageType.CONNACK,
             return_code=mqtt_sn.ReturnCode.ACCEPTED
         )
-        logger.info(f"Sending CONNACK message: {connack_message} to {remote_addr}")
+        logger.debug(f"Sending CONNACK message: {connack_message} to {remote_addr}")
         await self.write_queue.put((connack_message, remote_addr))
 
     async def register_handler(self, message, client_id, remote_addr):
@@ -186,7 +186,7 @@ class MQTTSNGWClientContext(ClientContext):
             msg_id=message["msg_id"],
             return_code=mqtt_sn.ReturnCode.ACCEPTED
         )
-        logger.info(f"Sending REGACK message: {regack_message} to {remote_addr}")
+        logger.debug(f"Sending REGACK message: {regack_message} to {remote_addr}")
         await self.write_queue.put((regack_message, remote_addr))
 
     async def publish_handler(self, message, client_address):
@@ -209,7 +209,7 @@ class MQTTSNGWClientContext(ClientContext):
         return False
 
     async def handle_write_message(self, data, stream_id):
-        logger.info(f"Handling MQTT response received on stream id {stream_id}")
+        logger.debug(f"Handling MQTT response received on stream id {stream_id}")
         try:
             payload = json.loads(data)
             if payload["type"] == "PUBACK":
@@ -231,7 +231,7 @@ class MQTTSNGWClientContext(ClientContext):
                     msg_id=payload["msg_id"],
                     return_code=payload["return_code"]
                 )
-                logger.info(f"Sending PUBACK message: {puback_message} to {client_address}")
+                logger.debug(f"Sending PUBACK message: {puback_message} to {client_address}")
                 await self.write_queue.put((puback_message, client_address))
         except Exception as e:
             logger.error(f"Unable to handle MQTT response from server-proxy: {repr(data)}")
@@ -278,7 +278,7 @@ class CoAPClientContext(ClientContext):
         logger.info("CoAP Proxy Datagram reader started")
         while True:
             data, client_addr = await udp_stream.recv()
-            logger.info(
+            logger.debug(
                 f"CoAP Proxy - Received datagram length = {len(data)}, data = {data}, source = {client_addr}"
             )
             await self.read_queue.put((data, client_addr))
@@ -287,7 +287,7 @@ class CoAPClientContext(ClientContext):
         logger.info("CoAP Proxy Datagram writer started")
         while True:
             data, client_addr = await self.write_queue.get()
-            logger.info(
+            logger.debug(
                 f"CoAP Proxy - Sending datagram length = {len(data)}, data = {data}, destination = {client_addr}"
             )
             await udp_stream.send(data, client_addr)
@@ -301,14 +301,14 @@ class CoAPClientContext(ClientContext):
             self._device_stream_map[client_address] = stream_id
             self._stream_device_map[stream_id] = client_address
 
-        logger.info(f"Handling CoAP request from {client_address}")
+        logger.debug(f"Handling CoAP request from {client_address}")
         return data, stream_id
 
     async def handle_write_message(self, data, stream_id):
-        logger.info(f"Handling CoAP response")
+        logger.debug(f"Handling CoAP response")
         if self.is_valid(data):
             coap_data = aiocoap.Message.decode(data)
-            logger.info(f"Decoded CoAP response = {coap_data}")
+            logger.debug(f"Decoded CoAP response = {coap_data}")
             if stream_id in self._stream_device_map:
                 client_address = self._stream_device_map[stream_id]
                 await self.write_queue.put((data, client_address))
@@ -364,7 +364,7 @@ class CoAPServerContext(ServerContext):
             response = aiocoap.Message(code=aiocoap.BAD_OPTION, mtype=aiocoap.Type.ACK)
         else:
             target_uri = coap_request.opt.proxy_uri
-            logger.info(f"Proxying request to {target_uri}")
+            logger.debug(f"Proxying request to {target_uri}")
 
             # Forward the CoAP request to the actual server
             protocol = await aiocoap.Context.create_client_context()
@@ -372,7 +372,7 @@ class CoAPServerContext(ServerContext):
 
             try:
                 coap_response = await protocol.request(proxy_request).response
-                logger.info(f"Forwarded request to {target_uri}, received response: {coap_response} payload: "
+                logger.debug(f"Forwarded request to {target_uri}, received response: {coap_response} payload: "
                             f"'{coap_response.payload}'")
                 response = coap_response
             except Exception as e:
@@ -407,7 +407,7 @@ class MQTTSNGWServerContext(ServerContext):
                     self.mqtt_client = mqtt_client
 
                     async for message in self.mqtt_client.messages:
-                        logger.info(f"MQTT Message from Broker: {message.topic} {message.payload}")
+                        logger.debug(f"MQTT Message from Broker: {message.topic} {message.payload}")
                         await self.read_queue.put((message.topic, message.payload))
             except Exception as e:
                 self.mqtt_client = None
@@ -433,7 +433,7 @@ class MQTTSNGWServerContext(ServerContext):
         mqtt_message_dict = json.loads(data.decode())
         if self.mqtt_client:
             if mqtt_message_dict["type"] == "PUBLISH":
-                logger.info("Forwarding MQTT PUBLISH to broker")
+                logger.debug("Forwarding MQTT PUBLISH to broker")
                 try:
                     await self.mqtt_client.publish(
                         mqtt_message_dict["topic_name"],
@@ -441,10 +441,10 @@ class MQTTSNGWServerContext(ServerContext):
                         qos=mqtt_message_dict["qos"],
                         retain=mqtt_message_dict["retain"],
                     )
-                    logger.info("MQTT PUBLISH successful")
+                    logger.debug("MQTT PUBLISH successful")
 
                     if mqtt_message_dict["qos"] in (1, 2):
-                        logger.info("QoS is 1 or 2, sending PUBACK back to client-proxy.")
+                        logger.debug("QoS is 1 or 2, sending PUBACK back to client-proxy.")
                         mqtt_puback_dict = {
                             "type": "PUBACK",
                             "topic_name": mqtt_message_dict["topic_name"],
@@ -457,7 +457,7 @@ class MQTTSNGWServerContext(ServerContext):
                     logger.error(f"Failed to publish to broker")
                     logger.exception(e)
                     if mqtt_message_dict["qos"] in (1, 2):
-                        logger.info("QoS is 1 or 2, sending PUBACK back to client-proxy.")
+                        logger.debug("QoS is 1 or 2, sending PUBACK back to client-proxy.")
                         mqtt_puback_dict = {
                             "type": "PUBACK",
                             "topic_name": mqtt_message_dict["topic_name"],
@@ -467,7 +467,7 @@ class MQTTSNGWServerContext(ServerContext):
                         }
                         return json.dumps(mqtt_puback_dict).encode()
             if mqtt_message_dict["type"] == "SUBSCRIBE":
-                logger.info(f"Subscribing to topic '{mqtt_message_dict['topic_name']}' broker")
+                logger.debug(f"Subscribing to topic '{mqtt_message_dict['topic_name']}' broker")
                 try:
                     await self.mqtt_client.subscribe(mqtt_message_dict["topic_name"], qos=mqtt_message_dict["qos"])
                 except Exception as e:

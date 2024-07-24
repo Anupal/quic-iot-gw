@@ -122,9 +122,9 @@ def start_mqtt_sn_client(index, mqtt_sn_gw_host, mqtt_sn_gw_port, num_requests, 
     if not response or response["return_code"] != mqtt_sn.ReturnCode.ACCEPTED:
         logger.error(f"Client{index} failed to connect")
         return
-    logger.info(f"Client{index} connected")
+    logger.debug(f"Client{index} connected")
 
-    logger.info(f"Client{index} registering topics.")
+    logger.debug(f"Client{index} registering topics.")
     topic_name_to_id = {}
     for i in range(num_topics):
         time.sleep(random.random())
@@ -133,9 +133,9 @@ def start_mqtt_sn_client(index, mqtt_sn_gw_host, mqtt_sn_gw_port, num_requests, 
             logger.error(f"Client{index} failed to register topic test{i}")
         topic_name_to_id[f"test{i}"] = response["topic_id"]
 
-    logger.info(f"Client{index} registered, topic ID mappings:\n{topic_name_to_id}")
+    logger.debug(f"Client{index} registered, topic ID mappings:\n{topic_name_to_id}")
 
-    logger.info(f"Client{index} sending requests.")
+    logger.debug(f"Client{index} sending requests.")
     success = 0
     for _ in range(num_requests):
         i = random.randint(0, num_topics - 1)
@@ -178,15 +178,15 @@ def main():
             for i in range(1, num_clients + 1)
         ]
 
-        logger.warning("Sleeping for 5 seconds...")
+        logger.info("Sleeping for 5 seconds...")
         time.sleep(5)
-        logger.warning(f"Starting MQTT-SN Clients...")
+        logger.info(f"Starting MQTT-SN Clients...")
         for client in p_mqtt_sn_clients:
             client.start()
         while results.qsize() != num_clients: ...
 
         table = []
-        logger.warning("Retrieving results:")
+        logger.info("Retrieving results:")
         for i in range(num_clients):
             table.append(results.get())
 
@@ -197,4 +197,4 @@ def main():
         for index, result in table:
             logger.info(f"| {index:<5} | {result:<5} |")
 
-        logger.warning(f"Result: {sum([res[1] for res in table]) / num_clients:.2f}")
+        logger.info(f"Result: {sum([res[1] for res in table]) / num_clients:.2f}")
