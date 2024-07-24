@@ -379,6 +379,8 @@ class CoAPServerContext(ServerContext):
                 logger.error(f"Failed to get response from server: {e}")
                 response = aiocoap.Message(code=aiocoap.INTERNAL_SERVER_ERROR, mtype=aiocoap.Type.ACK)
 
+            await protocol.shutdown()
+
         response.mid = coap_request.mid
         response.token = coap_request.token
         return response.encode()
