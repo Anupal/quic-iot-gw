@@ -1,3 +1,0 @@
-[console_scripts]
-qig_client = quic_iot_gateway.scripts.qig_client:main
-qig_server = quic_iot_gateway.scripts.qig_server:main

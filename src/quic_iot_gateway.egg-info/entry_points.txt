@@ -1,4 +1,0 @@
-[console_scripts]
-coap_server = quic_iot_gateway.scripts.coap_server:start_coap_server
-qig_client = quic_iot_gateway.scripts.qig_client:main
-qig_server = quic_iot_gateway.scripts.qig_server:main
