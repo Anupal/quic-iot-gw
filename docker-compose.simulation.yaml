@@ -28,7 +28,7 @@ services:
       --host 0.0.0.0 \
       --port 5684 \
       --num-clients 500 \
-      --log-level WARNING"
+      --log-level INFO"
     restart: always
     networks:
       - cloud-provider
@@ -53,7 +53,7 @@ services:
       --key_file tests/certs/key.pem \
       --mqtt_broker_host mqtt-broker \
       --mqtt_broker_port 1883 \
-      --log-level WARNING"
+      --log-level INFO"
 
     restart: always
     networks:
@@ -71,7 +71,7 @@ services:
       --coap_port 5683 \
       --mqtt_sn_host 0.0.0.0 \
       --mqtt_sn_port 1883 \
-      --log-level WARNING"
+      --log-level INFO"
     restart: always
     networks:
       - internet
@@ -90,7 +90,7 @@ services:
       --num-clients 50 \
       --num-requests 10 \
       --starting-port 30001 \
-      --log-level WARNING"
+      --log-level INFO"
     restart: always
     networks:
       - iot
@@ -107,7 +107,7 @@ services:
       --num-requests 10 \
       --num-topics 10 \
       --starting-port 31001 \
-      --log-level WARNING"
+      --log-level INFO"
     restart: always
     networks:
       - iot
