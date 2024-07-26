@@ -23,7 +23,7 @@ class TCPGatewayClient:
         def data_received(self, data):
             stream_id = struct.unpack('!H', data[:2])[0]
             data = data[2:]
-            logger.debug(f"Received from server, payload {data} on stream id {stream_id}")
+            logger.debug(f"Received from server-proxy, payload: '{repr(data)}' on stream '{stream_id}'")
             asyncio.ensure_future(self.tcp_client_read_queue.put((stream_id, data)))
 
         def connection_lost(self, exc):
@@ -34,11 +34,18 @@ class TCPGatewayClient:
 
             self.parent.cancel_io_tasks()
 
+        async def send_data(self, stream_id, payload: bytes):
+            await self.tcp_client_write_queue.put((stream_id, payload))
+
+        async def get_data(self):
+            response = await self.tcp_client_read_queue.get()
+            return response
+
         async def tcp_writer(self):
             while self.parent.client:
                 try:
                     stream_id, data = await self.tcp_client_write_queue.get()
-                    logger.debug(f"Sending to server: {data}")
+                    logger.debug(f"Sending to server-proxy, payload '{data}' over stream '{stream_id}'")
                     self.transport.write(struct.pack('!H', stream_id) + data)
                 except Exception as e:
                     logger.error("TCP writer error")
@@ -47,7 +54,7 @@ class TCPGatewayClient:
     def __init__(self, tcp_server_host, tcp_server_port):
         self.tcp_server_host = tcp_server_host
         self.tcp_server_port = tcp_server_port
-        self.client = False
+        self.tcp_client = None
         self.io_tasks = []
         self.io_tasks_funcs = []
         self.tcp_client_read_queue: asyncio.Queue[Tuple[int, bytes]] = asyncio.Queue()
@@ -62,19 +69,20 @@ class TCPGatewayClient:
         logger.info(f"Starting TCP client, server = ({self.tcp_server_host}:{self.tcp_server_port})")
 
         while True:
-            if not self.client:
+            if not self.tcp_client:
                 try:
                     loop = asyncio.get_event_loop()
                     try:
+                        self.tcp_client = self._TCPGatewayClientProtocol(self, self.tcp_client_read_queue, self.tcp_client_write_queue)
                         transport, protocol = await loop.create_connection(
-                            lambda: self._TCPGatewayClientProtocol(self, self.tcp_client_read_queue, self.tcp_client_write_queue),
+                            lambda: self.tcp_client,
                             self.tcp_server_host, self.tcp_server_port
                         )
 
                         await self.start_io_tasks()
                         transport.close()
                     except asyncio.CancelledError:
-                        self.client = False
+                        self.tcp_client = None
                     logger.error("TCP client disconnected, retrying after 1 second")
                     await asyncio.sleep(1)
                 except Exception as e:
@@ -103,21 +111,25 @@ class TCPGatewayClient:
     async def tx_message_dispatcher(self):
         logger.info("TX Dispatcher started")
         while True:
-            if self.client:
+            if self.tcp_client:
                 stream_id, payload = self._get_next_available_stream_id(), b"DUMMY DATA"
                 logger.debug(f"TX Dispatcher - {stream_id}: {payload.decode()}")
-                await self.tcp_client_write_queue.put((stream_id, payload))
+                await self.tcp_client.send_data(stream_id, payload)
                 await asyncio.sleep(5)
             else:
                 logger.error("TX Dispatcher - no TCP client available, retrying after 5 seconds.")
                 await asyncio.sleep(5)
 
     async def rx_message_dispatcher(self):
+        """
+        Handle response from TCP server. To be overridden by subclasses.
+        :return:
+        """
         logger.info("RX Dispatcher started")
         while True:
-            if self.client:
+            if self.tcp_client:
                 stream_id, data = await self.tcp_client_read_queue.get()
-                logger.debug(f"RX Dispatcher - Received: {data.decode()}")
+                logger.debug(f"RX Dispatcher - {stream_id}: {repr(data.decode())}")
             else:
                 logger.error("RX Dispatcher - no TCP client available, retrying after 5 seconds.")
                 await asyncio.sleep(5)
@@ -138,9 +150,9 @@ class TCPGatewayServerProtocol(asyncio.Protocol):
         asyncio.ensure_future(self.init_tasks())
 
     def data_received(self, data):
-        stream_id = struct.unpack('!H', data[:2])[0]
+        stream_id = int(struct.unpack('!H', data[:2])[0])
         data = data[2:]
-        logger.debug(f"Received from client, payload {data} on stream id {stream_id}")
+        logger.debug(f"Received from client-proxy, payload: '{repr(data)}' on stream '{stream_id}'")
         asyncio.ensure_future(self.tcp_server_read_queue.put((stream_id, data)))
 
     def connection_lost(self, exc):
@@ -149,27 +161,44 @@ class TCPGatewayServerProtocol(asyncio.Protocol):
             logger.error(f"Connection lost due to {exc}")
 
     async def init_tasks(self):
+        self.tcp_writer_task = self.tcp_writer()
         self.tx_task = asyncio.create_task(self.tx_message_dispatcher())
         self.rx_task = asyncio.create_task(self.rx_message_dispatcher())
-        await asyncio.gather(self.tx_task, self.rx_task)
+        await asyncio.gather(self.tcp_writer_task, self.tx_task, self.rx_task)
+
+    async def send_data(self, stream_id, payload: bytes):
+        await self.tcp_server_write_queue.put((stream_id, payload))
+
+    async def get_data(self):
+        data = await self.tcp_server_read_queue.get()
+        return data
+
+    async def tcp_writer(self):
+        while True:
+            stream_id, payload = await self.tcp_server_write_queue.get()
+            logger.debug(f"Sending to client-proxy, payload: '{repr(payload)}' over stream '{stream_id}'")
+            self.transport.write(struct.pack('!H', stream_id) + payload)
 
     async def tx_message_dispatcher(self):
+        """
+        Sends data to TCP gateway client. To be overridden by subclasses.
+        :return:
+        """
         logger.info("TX Dispatcher started")
-        while True:
-            stream_id, data = await self.tcp_server_write_queue.get()
-            logger.debug(f"Sending to client: {data}")
-            self.transport.write(struct.pack('!H', stream_id) + data)
 
     async def rx_message_dispatcher(self):
+        """
+        Handle response from TCP client. To be overridden by subclasses.
+        :return:
+        """
         logger.info("RX Dispatcher started")
         while True:
             try:
-                stream_id, data = await self.tcp_server_read_queue.get()
-                logger.debug(f"RX Dispatcher: {data.decode()}")
-                response = f"{data.decode()} BACK".encode()
-                await self.tcp_server_write_queue.put((stream_id, response))
+                stream_id, data = await self.get_data()
+                logger.debug(f"RX Dispatcher: {repr(data.decode())}")
+                await self.send_data(stream_id, f"{data.decode()} BACK".encode())
             except Exception as e:
-                logger.error("RX Dispatcher exception")
+                logger.error("RX Dispatcher - error in received data...")
                 logger.exception(e)
 
 
