@@ -24,13 +24,17 @@ class IoTGatewayClient(transport.TCPGatewayClient):
             self.rx_message_dispatcher
         ]
 
-        await self.init_tcp_client()
+        for index in range(self.num_tcp_clients):
+            asyncio.ensure_future(self.init_tcp_client(index))
+
+        await self.start_io_tasks()
 
     async def mqtt_sn_tx_message_dispatcher(self):
         logger.info("MQTT-SN TX Dispatcher started")
         self.mqtt_sn_context.reset()
         while True:
-            if self.tcp_client:
+            tcp_client = self.tcp_client
+            if tcp_client:
                 try:
                     ret = await self.mqtt_sn_context.handle_read_message(
                         self._get_next_available_stream_id
@@ -39,7 +43,7 @@ class IoTGatewayClient(transport.TCPGatewayClient):
                     if ret:
                         payload, stream_id = ret
                         logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
-                        await self.tcp_client.send_data(stream_id, payload)
+                        await tcp_client.send_data(stream_id, payload)
 
                 except Exception as e:
                     logger.error("TX Dispatcher - Error occurred when handling MQTT-SN message...")
@@ -52,14 +56,15 @@ class IoTGatewayClient(transport.TCPGatewayClient):
         logger.info("CoAP TX Dispatcher started")
         self.coap_context.reset()
         while True:
-            if self.tcp_client:
+            tcp_client = self.tcp_client
+            if tcp_client:
                 try:
                     payload, stream_id = await self.coap_context.handle_read_message(
                         self._get_next_available_stream_id
                     )
 
                     logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
-                    await self.tcp_client.send_data(stream_id, payload)
+                    await tcp_client.send_data(stream_id, payload)
 
                 except Exception as e:
                     logger.error("TX Dispatcher - Error occurred when handling CoAP message...")
@@ -71,9 +76,10 @@ class IoTGatewayClient(transport.TCPGatewayClient):
     async def rx_message_dispatcher(self):
         logger.info("RX Dispatcher started")
         while True:
-            if self.tcp_client:
+            tcp_client = self.tcp_client
+            if tcp_client:
                 try:
-                    stream_id, data = await self.tcp_client.get_data()
+                    stream_id, data = await tcp_client.get_data()
                     logger.debug(f"RX Dispatcher - {stream_id}: {repr(data)}")
                     if self.coap_context.is_valid(data):
                         await self.coap_context.handle_write_message(data, stream_id)
