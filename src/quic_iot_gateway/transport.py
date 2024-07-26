@@ -227,7 +227,7 @@ async def init_quic_server(quic_server_host, quic_server_port, certfile, keyfile
     configuration.verify_mode = not disable_cert_verification
     configuration.load_cert_chain(certfile=certfile, keyfile=keyfile)
     try:
-        return await serve("0.0.0.0", 4433, configuration=configuration, create_protocol=server_protocol)
+        return await serve(quic_server_host, quic_server_port, configuration=configuration, create_protocol=server_protocol)
     except Exception as e:
         logger.error("Failed to start QUIC transport server")
 
