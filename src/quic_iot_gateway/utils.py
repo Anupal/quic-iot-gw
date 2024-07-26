@@ -4,7 +4,7 @@ import colorlog
 
 def setup_logger(logging_level=logging.INFO):
     logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging_level)
 
     # Create a handler
     handler = logging.StreamHandler()
