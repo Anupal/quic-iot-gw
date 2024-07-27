@@ -2,12 +2,12 @@ import logging
 
 import asyncio
 
-import quic_iot_gateway.transport as transport
+import quic_iot_gateway.tls.transport as transport
 
 logger = logging.getLogger(__name__)
 
 
-class IoTGatewayClient(transport.QUICGatewayClient):
+class IoTGatewayClient(transport.TLSGatewayClient):
     def __init__(self, *args, coap_context, mqtt_sn_context, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -24,44 +24,49 @@ class IoTGatewayClient(transport.QUICGatewayClient):
             self.rx_message_dispatcher
         ]
 
-        await self.init_quic_client()
+        for index in range(self.num_tls_clients):
+            asyncio.ensure_future(self.init_tls_client(index))
+
+        await self.start_io_tasks()
 
     async def mqtt_sn_tx_message_dispatcher(self):
         logger.info("MQTT-SN TX Dispatcher started")
         self.mqtt_sn_context.reset()
         while True:
-            if self.quic_client:
+            tls_client = self.tls_client
+            if tls_client:
                 try:
                     ret = await self.mqtt_sn_context.handle_read_message(
-                        self.quic_client._quic.get_next_available_stream_id
+                        self._get_next_available_stream_id
                     )
                     # If there is data to be forwarded
                     if ret:
                         payload, stream_id = ret
                         logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
-                        await self.quic_client.send_data(stream_id, payload)
+                        await tls_client.send_data(stream_id, payload)
 
                 except Exception as e:
                     logger.error("TX Dispatcher - Error occurred when handling MQTT-SN message...")
                     logger.exception(e)
             else:
-                logger.error("TX Dispatcher - no quic client available, retrying after 5 seconds.")
+                logger.error("TX Dispatcher - no TLS client available, retrying after 5 seconds.")
                 await asyncio.sleep(5)
 
     async def coap_tx_message_dispatcher(self):
         logger.info("CoAP TX Dispatcher started")
         self.coap_context.reset()
         while True:
-            if self.quic_client:
+            tls_client = self.tls_client
+            if tls_client:
                 try:
                     ret = await self.coap_context.handle_read_message(
-                        self.quic_client._quic.get_next_available_stream_id
+                        self._get_next_available_stream_id
                     )
-
+                    # If there is data to be forwarded
                     if ret:
                         payload, stream_id = ret
                         logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
-                        await self.quic_client.send_data(stream_id, payload)
+                        await tls_client.send_data(stream_id, payload)
 
                 except Exception as e:
                     logger.error("TX Dispatcher - Error occurred when handling CoAP message...")
@@ -73,9 +78,10 @@ class IoTGatewayClient(transport.QUICGatewayClient):
     async def rx_message_dispatcher(self):
         logger.info("RX Dispatcher started")
         while True:
-            if self.quic_client:
+            tls_client = self.tls_client
+            if tls_client:
                 try:
-                    stream_id, data = await self.quic_client.get_data()
+                    stream_id, data = await tls_client.get_data()
                     logger.debug(f"RX Dispatcher - {stream_id}: {repr(data)}")
                     if self.coap_context.is_valid(data):
                         await self.coap_context.handle_write_message(data, stream_id)
@@ -90,7 +96,7 @@ class IoTGatewayClient(transport.QUICGatewayClient):
                 await asyncio.sleep(5)
 
 
-class IoTGatewayServerProtocolTemplate(transport.QUICGatewayServerProtocol):
+class IoTGatewayServerProtocolTemplate(transport.TLSGatewayServerProtocol):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
