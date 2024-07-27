@@ -31,6 +31,8 @@ def process_args():
                         help='Define the number of topics to shuffle for coap clients.')
     parser.add_argument('--starting-port', default=31001,
                         help='Define the starting port number to be used by coap clients.')
+    parser.add_argument('--loops', default=1,
+                        help='Define number of times to run the test.')
 
     # Parse arguments
     args = parser.parse_args()
@@ -39,6 +41,7 @@ def process_args():
     message_size_range = tuple(map(int, args.message_size_range.split(',')))
     mqtt_sn_gw_host = args.mqtt_sn_gw_host
     mqtt_sn_gw_port = int(args.mqtt_sn_gw_port)
+    loops = int(args.loops)
 
     log_level = getattr(logging, args.log_level.upper(), logging.WARNING)
 
@@ -47,7 +50,7 @@ def process_args():
         mqtt_sn_gw_host,
         mqtt_sn_gw_port,
         log_level, int(args.num_clients), int(args.num_requests),
-        int(args.num_topics), int(args.starting_port)
+        int(args.num_topics), int(args.starting_port), loops
     )
 
 
@@ -101,15 +104,21 @@ def publish_message(topic_id, data, qos):
     return mqtt_sn.encoder.encode(**pub_dict)
 
 
-def send_request(client, mqtt_sn_gw_host, mqtt_sn_gw_port, message, recv=True):
+def send_request(client, mqtt_sn_gw_host, mqtt_sn_gw_port, message, recv=True, retries=2):
+    retries += 1
     try:
-        client.sendto(message, (mqtt_sn_gw_host, mqtt_sn_gw_port))
-        if recv:
-            client.settimeout(5.0)
-            response, server_address = client.recvfrom(1024)
-            return mqtt_sn.decoder.decode(response)
+        while retries > 0:
+            if retries < 3: logger.debug(f"Retransmission {3 - retries}")
+            try:
+                client.sendto(message, (mqtt_sn_gw_host, mqtt_sn_gw_port))
+                if recv:
+                    client.settimeout(5.0)
+                    response, server_address = client.recvfrom(1024)
+                    return mqtt_sn.decoder.decode(response)
+            except TimeoutError:
+                retries -= 1
     except Exception as e:
-        logger.exception(e)
+        logger.debug(e)
         return
 
 
@@ -137,10 +146,13 @@ def start_mqtt_sn_client(index, mqtt_sn_gw_host, mqtt_sn_gw_port, num_requests, 
 
     logger.debug(f"Client{index} sending requests.")
     success = 0
+    times = []
     for _ in range(num_requests):
         i = random.randint(0, num_topics - 1)
-        time.sleep(random.random() + random.random())
+        time.sleep(random.random()) # + random.random())
+
         if f"test{i}" in topic_name_to_id:
+            start = time.time()
             response = send_request(client,
                 mqtt_sn_gw_host, mqtt_sn_gw_port,
                 publish_message(
@@ -149,19 +161,21 @@ def start_mqtt_sn_client(index, mqtt_sn_gw_host, mqtt_sn_gw_port, num_requests, 
                     1
                 )
             )
+            end = time.time()
             if not response or response["return_code"] != mqtt_sn.ReturnCode.ACCEPTED:
                 logger.error(f"Client{index} failed to PUBLISH topic test{i}")
             else:
+                times.append(end - start)
                 success += 1
 
     client.close()
-
-    results.put((index, success))
+    average_time_taken = sum(times) / len(times)
+    results.put((index, success, average_time_taken))
 
 
 def main():
     message_size_range, mqtt_sn_gw_host, mqtt_sn_gw_port, log_level, num_clients, \
-        num_requests, num_topics, starting_port = process_args()
+        num_requests, num_topics, starting_port, loops = process_args()
     setup_logger(log_level)
 
     try:
@@ -170,7 +184,7 @@ def main():
         logger.exception(f"Failed to resolve host '{mqtt_sn_gw_host}'")
         exit(1)
 
-    while True:
+    for _ in range(loops):
         results = mp.Queue()
         p_mqtt_sn_clients = [
             mp.Process(target=start_mqtt_sn_client, args=(i, mqtt_sn_gw_host, mqtt_sn_gw_port, num_requests, num_topics,
@@ -178,8 +192,9 @@ def main():
             for i in range(1, num_clients + 1)
         ]
 
-        logger.info("Sleeping for 5 seconds...")
-        time.sleep(5)
+        if loops > 1:
+            logger.info("Sleeping for 1 second...")
+            time.sleep(1)
         logger.info(f"Starting MQTT-SN Clients...")
         for client in p_mqtt_sn_clients:
             client.start()
@@ -194,7 +209,9 @@ def main():
             client.join()
 
         table.sort(key=lambda x: x[0])
-        for index, result in table:
-            logger.warning(f"| {index:<5} | {result:<5} |")
+        for index, success, time_taken in table:
+            logger.debug(f"| {index:<5} | {success:<5} | {time_taken:<5} |")
 
-        logger.info(f"Result: {sum([res[1] for res in table]) / num_clients:.2f}")
+        logger.critical("Result")
+        logger.critical(f"Successful requests: {sum([res[1] for res in table]) / num_clients:.2f}")
+        logger.critical(f"Average time taken (s): {sum([res[2] for res in table]) / num_clients:.4f}")
