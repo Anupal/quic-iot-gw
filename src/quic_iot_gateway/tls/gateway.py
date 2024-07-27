@@ -2,12 +2,12 @@ import logging
 
 import asyncio
 
-import quic_iot_gateway.tcp.transport as transport
+import quic_iot_gateway.tls.transport as transport
 
 logger = logging.getLogger(__name__)
 
 
-class IoTGatewayClient(transport.TCPGatewayClient):
+class IoTGatewayClient(transport.TLSGatewayClient):
     def __init__(self, *args, coap_context, mqtt_sn_context, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -24,8 +24,8 @@ class IoTGatewayClient(transport.TCPGatewayClient):
             self.rx_message_dispatcher
         ]
 
-        for index in range(self.num_tcp_clients):
-            asyncio.ensure_future(self.init_tcp_client(index))
+        for index in range(self.num_tls_clients):
+            asyncio.ensure_future(self.init_tls_client(index))
 
         await self.start_io_tasks()
 
@@ -33,8 +33,8 @@ class IoTGatewayClient(transport.TCPGatewayClient):
         logger.info("MQTT-SN TX Dispatcher started")
         self.mqtt_sn_context.reset()
         while True:
-            tcp_client = self.tcp_client
-            if tcp_client:
+            tls_client = self.tls_client
+            if tls_client:
                 try:
                     ret = await self.mqtt_sn_context.handle_read_message(
                         self._get_next_available_stream_id
@@ -43,28 +43,30 @@ class IoTGatewayClient(transport.TCPGatewayClient):
                     if ret:
                         payload, stream_id = ret
                         logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
-                        await tcp_client.send_data(stream_id, payload)
+                        await tls_client.send_data(stream_id, payload)
 
                 except Exception as e:
                     logger.error("TX Dispatcher - Error occurred when handling MQTT-SN message...")
                     logger.exception(e)
             else:
-                logger.error("TX Dispatcher - no TCP client available, retrying after 5 seconds.")
+                logger.error("TX Dispatcher - no TLS client available, retrying after 5 seconds.")
                 await asyncio.sleep(5)
 
     async def coap_tx_message_dispatcher(self):
         logger.info("CoAP TX Dispatcher started")
         self.coap_context.reset()
         while True:
-            tcp_client = self.tcp_client
-            if tcp_client:
+            tls_client = self.tls_client
+            if tls_client:
                 try:
-                    payload, stream_id = await self.coap_context.handle_read_message(
+                    ret = await self.coap_context.handle_read_message(
                         self._get_next_available_stream_id
                     )
-
-                    logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
-                    await tcp_client.send_data(stream_id, payload)
+                    # If there is data to be forwarded
+                    if ret:
+                        payload, stream_id = ret
+                        logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
+                        await tls_client.send_data(stream_id, payload)
 
                 except Exception as e:
                     logger.error("TX Dispatcher - Error occurred when handling CoAP message...")
@@ -76,10 +78,10 @@ class IoTGatewayClient(transport.TCPGatewayClient):
     async def rx_message_dispatcher(self):
         logger.info("RX Dispatcher started")
         while True:
-            tcp_client = self.tcp_client
-            if tcp_client:
+            tls_client = self.tls_client
+            if tls_client:
                 try:
-                    stream_id, data = await tcp_client.get_data()
+                    stream_id, data = await tls_client.get_data()
                     logger.debug(f"RX Dispatcher - {stream_id}: {repr(data)}")
                     if self.coap_context.is_valid(data):
                         await self.coap_context.handle_write_message(data, stream_id)
@@ -94,7 +96,7 @@ class IoTGatewayClient(transport.TCPGatewayClient):
                 await asyncio.sleep(5)
 
 
-class IoTGatewayServerProtocolTemplate(transport.TCPGatewayServerProtocol):
+class IoTGatewayServerProtocolTemplate(transport.TLSGatewayServerProtocol):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

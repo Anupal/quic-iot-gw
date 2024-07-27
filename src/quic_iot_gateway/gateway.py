@@ -54,12 +54,14 @@ class IoTGatewayClient(transport.QUICGatewayClient):
         while True:
             if self.quic_client:
                 try:
-                    payload, stream_id = await self.coap_context.handle_read_message(
+                    ret = await self.coap_context.handle_read_message(
                         self.quic_client._quic.get_next_available_stream_id
                     )
 
-                    logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
-                    await self.quic_client.send_data(stream_id, payload)
+                    if ret:
+                        payload, stream_id = ret
+                        logger.debug(f"TX Dispatcher - {stream_id}: {repr(payload)}")
+                        await self.quic_client.send_data(stream_id, payload)
 
                 except Exception as e:
                     logger.error("TX Dispatcher - Error occurred when handling CoAP message...")
