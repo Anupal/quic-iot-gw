@@ -33,6 +33,13 @@ services:
     networks:
       - cloud-provider
 
+  demo-server:
+    image: demo-server
+    container_name: demo-server
+    restart: always
+    networks:
+      - cloud-provider
+
   mqtt-broker:
     image: eclipse-mosquitto:latest
     container_name: mqtt-broker
@@ -119,5 +126,12 @@ services:
       dockerfile: mqtt-sn-client.Dockerfile
     container_name: mqtt-sn-client
     command: tail -f /dev/null
+    networks:
+      - iot
+
+  demo-client:
+    image: demo-client
+    container_name: demo-client
+    restart: always
     networks:
       - iot
