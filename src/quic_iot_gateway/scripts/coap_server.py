@@ -55,7 +55,7 @@ class CoAPResource(resource.Resource):
 
     async def render_post(self, request):
         logger.debug(f"Received POST request: {request}")
-        payload = f"Hello, {self.index} ".encode() + request.payload
+        payload = f"Hello, {self.index} ".encode()
         response = aiocoap.Message(
             payload=payload,
             code=aiocoap.CHANGED
