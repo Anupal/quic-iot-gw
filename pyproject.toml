@@ -27,6 +27,8 @@ classifiers = [
 [project.scripts]
 qig_server = "quic_iot_gateway.scripts.qig_server:main"
 qig_client = "quic_iot_gateway.scripts.qig_client:main"
+tig_server = "quic_iot_gateway.scripts.tig_server:main"
+tig_client = "quic_iot_gateway.scripts.tig_client:main"
 coap_server = "quic_iot_gateway.scripts.coap_server:start_coap_server"
 coap_client = "quic_iot_gateway.scripts.coap_client:main"
 mqtt_sn_client = "quic_iot_gateway.scripts.mqtt_sn_client:main"
