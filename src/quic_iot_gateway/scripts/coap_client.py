@@ -2,19 +2,17 @@ import argparse
 import logging
 import string
 import random
+import re
+import socket
 import time
 
 import asyncio
-import aiocoap.resource as resource
 import aiocoap
 import multiprocessing as mp
 
 from quic_iot_gateway.utils import setup_logger
 
 logger = logging.getLogger(__name__)
-
-aiocoap_logger = logging.getLogger('aiocoap.messagemanager')
-aiocoap_logger.setLevel(logging.CRITICAL)
 
 
 def generate_bytes(n):
@@ -70,8 +68,27 @@ def process_args():
     )
 
 
+def send_request(client, coap_host, coap_port, message, recv=True, retries=2):
+    retries += 1
+    try:
+        while retries > 0:
+            if retries < 3: logger.debug(f"Retransmission {3 - retries}")
+            try:
+                client.sendto(message, (coap_host, coap_port))
+                if recv:
+                    client.settimeout(5.0)
+                    response, server_address = client.recvfrom(1024)
+                    return aiocoap.Message.decode(response)
+            except TimeoutError:
+                retries -= 1
+    except Exception as e:
+        logger.exception(e)
+        return
+
+
 async def coap_client(index, backend_uri, proxy_uri, num_requests, message_size_range, starting_port, req_type="mixed"):
-    protocol = await aiocoap.Context.create_server_context(resource.Site(), bind=("0.0.0.0", starting_port + index))
+    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    client.bind(("0.0.0.0", starting_port + index))
     resource_uri = backend_uri + f"{index}"
 
     success = 0
@@ -89,35 +106,51 @@ async def coap_client(index, backend_uri, proxy_uri, num_requests, message_size_
             logger.debug(f"Sending GET request through proxy {proxy_uri} to {resource_uri}")
             request = aiocoap.Message(code=aiocoap.GET, uri=proxy_uri)
             request.opt.proxy_uri = resource_uri
-            try:
-                start = time.time()
-                response = await protocol.request(request).response
-                end = time.time()
+            request.mid = random.randint(1, 65535)
+            request.mtype = aiocoap.CON
+
+            request = request.encode()
+
+            coap_proxy_host, coap_proxy_port = re.findall(r"coap://(.+):(\d+)", proxy_uri)[0]
+            coap_proxy_port = int(coap_proxy_port)
+            start = time.time()
+            response = send_request(client, coap_proxy_host, coap_proxy_port, request)
+            end = time.time()
+
+            if response:
                 logger.debug(
                     f"Received GET response: code='{response.code}' payload='{repr(response.payload)}'")
                 if response.code == aiocoap.CONTENT and f"Hello, {index} ".encode() in response.payload:
                     times.append(end - start)
                     success += 1
-            except Exception as e:
-                logger.error("Error sending GET request", exc_info=e)
+            else:
+                logger.error("Failed to send GET request")
         else:
             logger.debug(f"Sending POST request through proxy {proxy_uri} to {resource_uri}")
             request = aiocoap.Message(code=aiocoap.POST, uri=proxy_uri,
                                       payload=generate_bytes(random.randint(*message_size_range))
                                       )
             request.opt.proxy_uri = resource_uri
-            try:
-                start = time.time()
-                response = await protocol.request(request).response
-                end = time.time()
+            request.mid = random.randint(1, 65535)
+            request.mtype = aiocoap.CON
+
+            request = request.encode()
+
+            coap_proxy_host, coap_proxy_port = re.findall(r"coap://(.+):(\d+)", proxy_uri)[0]
+            coap_proxy_port = int(coap_proxy_port)
+            start = time.time()
+            response = send_request(client, coap_proxy_host, coap_proxy_port, request)
+            end = time.time()
+            if response:
                 logger.debug(
                     f"Received POST response: code='{response.code}' payload='{repr(response.payload)}'")
                 if response.code == aiocoap.CHANGED and f"Hello, {index} ".encode() in response.payload:
                     times.append(end - start)
                     success += 1
-            except Exception as e:
-                logger.error("Error sending POST request", exc_info=e)
-    await protocol.shutdown()
+            else:
+                logger.error("Failed to send POST request")
+
+    client.close()
     if times:
         average_time_taken = sum(times) / len(times)
     else:
