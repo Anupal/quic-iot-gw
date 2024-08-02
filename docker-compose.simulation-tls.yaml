@@ -42,13 +42,13 @@ services:
     networks:
       - cloud-provider
 
-  qig-server:
+  tig-server:
     image: qig
-    container_name: qig-server
+    container_name: tig-server
     command: >
-      bash -c "qig_server \
-      --quic_server_host 0.0.0.0 \
-      --quic_server_port 4433 \
+      bash -c "tig_server \
+      --tls_server_host 0.0.0.0 \
+      --tls_server_port 4433 \
       --cert_file tests/certs/cert.pem \
       --key_file tests/certs/key.pem \
       --mqtt_broker_host mqtt-broker \
@@ -60,13 +60,14 @@ services:
       - cloud-provider
       - internet
 
-  qig-client:
+  tig-client:
     image: qig
-    container_name: qig-client
+    container_name: tig-client
     command: >
-      bash -c "qig_client \
-      --quic_server_host qig-server \
-      --quic_server_port 4433 \
+      bash -c "tig_client \
+      --tls_server_host tig-server \
+      --tls_server_port 4433 \
+      --num_tls_clients 1 \
       --coap_host 0.0.0.0 \
       --coap_port 5683 \
       --mqtt_sn_host 0.0.0.0 \
@@ -85,7 +86,7 @@ services:
       --message_size_range 490,510 \
       --coap-server-host coap-server \
       --coap-server-port 5684 \
-      --coap-proxy-host qig-client \
+      --coap-proxy-host tig-client \
       --coap-proxy-port 5683 \
       --num-clients 100 \
       --num-requests 100 \
@@ -102,7 +103,7 @@ services:
     command: >
       bash -c "mqtt_sn_client \
       --message_size_range 490,510 \
-      --mqtt-sn-gw-host qig-client \
+      --mqtt-sn-gw-host tig-client \
       --mqtt-sn-gw-port 1883 \
       --num-clients 100 \
       --num-requests 100 \
