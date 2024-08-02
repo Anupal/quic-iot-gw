@@ -7,7 +7,7 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install python3 python3-pip git bash -y
+RUN apt-get update && apt-get install python3 python3-pip git bash tcpdump -y
 
 COPY . /app
 RUN python3 -m pip install -e .
